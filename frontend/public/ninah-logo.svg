@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="2000" height="500" viewBox="0 0 500 125" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500&amp;display=swap');
+      .ninja-star { fill: #ffffff; }
+    </style>
+  </defs>
+
+  <!-- Shuriken -->
+  <g transform="translate(62, 62) scale(0.2)">
+    <path class="ninja-star" d="M0,-240 C40,-140 100,-100 240,0 C140,40 100,100 0,240 C-40,140 -100,100 -240,0 C-140,-40 -100,-100 0,-240 Z M0,-50 A50,50 0 1,0 0,50 A50,50 0 1,0 0,-50 Z"/>
+  </g>
+
+  <!-- Text "Ninah" -->
+  <text x="120" y="80" font-family="'Space Grotesk', sans-serif" font-weight="500" font-size="54px" fill="#ffffff">Ninah</text>
+</svg>
