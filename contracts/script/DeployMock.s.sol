@@ -4,7 +4,7 @@ pragma solidity ^0.8.23;
 import {Script, console} from "forge-std/Script.sol";
 import {MockIDRX} from "../src/MockIDRX.sol";
 import {MockSP1Verifier} from "../src/MockSP1Verifier.sol";
-import {NinjaRupiah} from "../src/NinjaRupiah.sol";
+import {MockNinjaRupiah} from "../src/NinjaRupiah.sol";
 
 /// @title DeployMock
 /// @notice Deployment script for Mock NinjaRupiah with MockSP1Verifier
@@ -28,7 +28,7 @@ contract DeployMock is Script {
         console.log("MockSP1Verifier deployed at:", address(mockVerifier));
 
         // 3. Deploy NinjaRupiah with mock verifier
-        NinjaRupiah ninjaRupiah = new NinjaRupiah(
+        MockNinjaRupiah ninjaRupiah = new MockNinjaRupiah(
             address(mockIDRX),
             address(mockVerifier)
         );

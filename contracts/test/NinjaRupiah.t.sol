@@ -34,7 +34,9 @@ contract NinjaRupiahTest is Test {
         vm.startPrank(alice);
 
         bytes32 usernameHash = keccak256(bytes("alice"));
-        bytes32 commitment = keccak256(abi.encodePacked(usernameHash, alice, bytes32(uint256(12345))));
+        bytes32 commitment = keccak256(
+            abi.encodePacked(usernameHash, alice, bytes32(uint256(12345)))
+        );
 
         // Create mock proof with matching public values
         bytes memory publicValues = abi.encode(usernameHash, commitment);
@@ -53,8 +55,14 @@ contract NinjaRupiahTest is Test {
         vm.startPrank(alice);
 
         // 33 bytes compressed public key format
-        bytes memory viewingPub = abi.encodePacked(bytes1(0x02), bytes32(uint256(1)));
-        bytes memory spendingPub = abi.encodePacked(bytes1(0x03), bytes32(uint256(2)));
+        bytes memory viewingPub = abi.encodePacked(
+            bytes1(0x02),
+            bytes32(uint256(1))
+        );
+        bytes memory spendingPub = abi.encodePacked(
+            bytes1(0x03),
+            bytes32(uint256(2))
+        );
 
         ninjaRupiah.registerMetaKeys(viewingPub, spendingPub);
 
@@ -76,11 +84,15 @@ contract NinjaRupiahTest is Test {
         mockIDRX.approve(address(ninjaRupiah), amount);
 
         // 33 bytes compressed public key
-        bytes memory ephemeralPubkey = abi.encodePacked(bytes1(0x02), bytes32(uint256(999)));
+        bytes memory ephemeralPubkey = abi.encodePacked(
+            bytes1(0x02),
+            bytes32(uint256(999))
+        );
 
         ninjaRupiah.sendToStealth(stealthAddress, amount, ephemeralPubkey);
 
-        NinjaRupiah.StealthPayment memory payment = ninjaRupiah.getStealthPayment(stealthAddress);
+        NinjaRupiah.StealthPayment memory payment = ninjaRupiah
+            .getStealthPayment(stealthAddress);
         assertEq(payment.amount, amount);
         assertEq(payment.sender, alice);
         assertFalse(payment.claimed);
@@ -95,7 +107,10 @@ contract NinjaRupiahTest is Test {
         // Alice sends to stealth
         vm.startPrank(alice);
         mockIDRX.approve(address(ninjaRupiah), amount);
-        bytes memory ephemeralPubkey = abi.encodePacked(bytes1(0x02), bytes32(uint256(999)));
+        bytes memory ephemeralPubkey = abi.encodePacked(
+            bytes1(0x02),
+            bytes32(uint256(999))
+        );
         ninjaRupiah.sendToStealth(stealthAddress, amount, ephemeralPubkey);
         vm.stopPrank();
 
@@ -103,7 +118,11 @@ contract NinjaRupiahTest is Test {
         vm.startPrank(bob);
 
         bytes32 ephemeralPubkeyHash = keccak256(ephemeralPubkey);
-        bytes memory publicValues = abi.encode(stealthAddress, ephemeralPubkeyHash, bob);
+        bytes memory publicValues = abi.encode(
+            stealthAddress,
+            ephemeralPubkeyHash,
+            bob
+        );
         bytes memory proofBytes = hex"5678";
         bytes memory proof = abi.encode(MOCK_VKEY, publicValues, proofBytes);
 
@@ -113,7 +132,8 @@ contract NinjaRupiahTest is Test {
 
         assertEq(bobBalanceAfter - bobBalanceBefore, amount);
 
-        NinjaRupiah.StealthPayment memory payment = ninjaRupiah.getStealthPayment(stealthAddress);
+        NinjaRupiah.StealthPayment memory payment = ninjaRupiah
+            .getStealthPayment(stealthAddress);
         assertTrue(payment.claimed);
 
         vm.stopPrank();
@@ -125,7 +145,9 @@ contract NinjaRupiahTest is Test {
         vm.startPrank(alice);
 
         bytes32 usernameHash = keccak256(bytes("alice"));
-        bytes32 commitment = keccak256(abi.encodePacked(usernameHash, alice, bytes32(uint256(12345))));
+        bytes32 commitment = keccak256(
+            abi.encodePacked(usernameHash, alice, bytes32(uint256(12345)))
+        );
         bytes memory publicValues = abi.encode(usernameHash, commitment);
         bytes memory proof = abi.encode(MOCK_VKEY, publicValues, hex"1234");
 
