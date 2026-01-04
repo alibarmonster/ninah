@@ -28,11 +28,14 @@ contract DeployMock is Script {
         console.log("MockSP1Verifier deployed at:", address(mockVerifier));
 
         // 3. Deploy NinjaRupiah with mock verifier
-        NinjaRupiah ninjaRupiah = new NinjaRupiah(address(mockIDRX), address(mockVerifier));
+        NinjaRupiah ninjaRupiah = new NinjaRupiah(
+            address(mockIDRX),
+            address(mockVerifier)
+        );
         console.log("NinjaRupiah deployed at:", address(ninjaRupiah));
 
         // 4. Mint some tokens to deployer for testing
-        uint256 mintAmount = 1_000_000 * 10 ** 6; // 1 million IDRX
+        uint256 mintAmount = 1_000_000_000 * 10 ** 6; // 1 billion IDRX
         mockIDRX.mint(deployer, mintAmount);
         console.log("Minted", mintAmount / 10 ** 6, "IDRX to deployer");
 
