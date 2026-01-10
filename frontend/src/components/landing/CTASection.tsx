@@ -184,14 +184,36 @@ export default function CTASection() {
 
   // Handle password submission and key derivation
   const handleCreatePassword = async () => {
-    if (passwordErrors.length > 0 || password !== confirmPassword) return;
+    console.log('[PASSWORD CREATE] Starting password creation flow...');
+
+    if (passwordErrors.length > 0 || password !== confirmPassword) {
+      console.log('[PASSWORD CREATE] Validation failed:', {
+        passwordErrors,
+        passwordsMatch: password === confirmPassword,
+      });
+      return;
+    }
 
     // Filter for Privy embedded wallet (not external wallets like Rabby)
+    console.log('[PASSWORD CREATE] Looking for Privy embedded wallet...');
+    console.log(
+      '[PASSWORD CREATE] Available wallets:',
+      wallets.map((w) => ({ address: w.address, type: w.walletClientType })),
+    );
+
     const embeddedWallet = wallets.find((w) => w.walletClientType === 'privy');
     if (!embeddedWallet) {
+      console.error('[PASSWORD CREATE] Embedded wallet not found!');
       setKeyError('Embedded wallet not available');
       return;
     }
+
+    console.log('[PASSWORD CREATE] Found embedded wallet:', embeddedWallet.address);
+    console.log('[PASSWORD CREATE] Wallet object:', {
+      address: embeddedWallet.address,
+      clientType: embeddedWallet.walletClientType,
+      hasGetProvider: typeof embeddedWallet.getEthereumProvider,
+    });
 
     setIsDerivingKeys(true);
     setKeyError(null);
@@ -210,6 +232,10 @@ export default function CTASection() {
         ? 'phone'
         : 'wallet';
 
+      console.log('[PASSWORD CREATE] Initializing key manager...');
+      console.log('[PASSWORD CREATE] Auth method:', authMethod);
+      console.log('[PASSWORD CREATE] User identifier:', userIdentifier);
+
       // Initialize keys using keyManager (real implementation)
       // This will:
       // 1. Hash password with Argon2id
@@ -222,33 +248,134 @@ export default function CTASection() {
         wallet: {
           address: embeddedWallet.address,
           signMessage: async (message: string) => {
-            const result = await signMessage({ message }, { address: embeddedWallet.address });
-            return result.signature;
+            console.log('[WALLET SIGN] Requesting signature for message...');
+            console.log('[WALLET SIGN] Message preview:', message.substring(0, 100) + '...');
+            console.log('[WALLET SIGN] Privy signMessage function:', typeof signMessage);
+
+            try {
+              const result = await signMessage({ message }, { address: embeddedWallet.address });
+              console.log('[WALLET SIGN] Signature obtained:', result.signature?.substring(0, 20) + '...');
+              return result.signature;
+            } catch (error) {
+              console.error('[WALLET SIGN] Error signing message:', error);
+              throw error;
+            }
           },
         },
         userIdentifier: userIdentifier,
         authMethod: authMethod,
       });
 
-      // Get public keys for on-chain registration
-      const publicKeys = keyManager.getPublicKeys();
+      console.log('[PASSWORD CREATE] Key manager initialized successfully!');
 
-      // Get wallet provider for meta keys registration
-      const provider = await embeddedWallet.getEthereumProvider();
-      await registerMetaKeysMutation.mutateAsync({
-        provider,
-        account: embeddedWallet.address as `0x${string}`,
-        metaViewingPub: publicKeys.metaViewingPub,
-        metaSpendingPub: publicKeys.metaSpendingPub,
+      // Get public keys for on-chain registration
+      console.log('[META KEYS] Getting public keys from key manager...');
+      const publicKeys = keyManager.getPublicKeys();
+      console.log('[META KEYS] Public keys retrieved:', {
+        viewingPubLength: publicKeys.metaViewingPub.length,
+        spendingPubLength: publicKeys.metaSpendingPub.length,
       });
 
+      // Get wallet provider for transactions
+      console.log('[WALLET] Getting Ethereum provider...');
+      const provider = await embeddedWallet.getEthereumProvider();
+      console.log('[WALLET] Provider obtained');
+
+      // Check if user already has a username registered
+      console.log('[USERNAME] Checking if username already registered...');
+      const { getUsernameHash } = await import('@/lib/contracts');
+      const existingUsernameHash = await getUsernameHash(embeddedWallet.address as `0x${string}`);
+      const hasUsername = existingUsernameHash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+      console.log('[USERNAME] Check result:', { hasUsername, existingHash: existingUsernameHash });
+
+      // Step 1: Register username (only if not already registered)
+      if (!hasUsername) {
+        console.log('[USERNAME] Registering username on-chain...');
+        console.log('[USERNAME] Username:', username);
+
+        try {
+          // Generate username hash
+          const { keccak256, toBytes } = await import('viem');
+          const usernameHash = keccak256(toBytes(username));
+          console.log('[USERNAME] Username hash:', usernameHash);
+
+          // Generate mock proof
+          const { generateUsernameProof, encodeProofForContract } = await import('@/lib/api/proof');
+          const mockProof = await generateUsernameProof({
+            username,
+            wallet: embeddedWallet.address as `0x${string}`,
+          });
+
+          const encodedProof = encodeProofForContract(mockProof);
+          console.log('[USERNAME] Mock proof generated');
+
+          // Register username
+          const { registerUsername } = await import('@/lib/contracts');
+          const usernameReceipt = await registerUsername(
+            provider,
+            embeddedWallet.address as `0x${string}`,
+            usernameHash,
+            mockProof.commitment,
+            encodedProof,
+          );
+
+          console.log('[USERNAME] Username registered!');
+          console.log('[USERNAME] TX:', usernameReceipt.transactionHash);
+        } catch (usernameError) {
+          console.error('[USERNAME] Failed:', usernameError);
+          throw new Error(
+            `Username registration failed: ${usernameError instanceof Error ? usernameError.message : 'Unknown'}`,
+          );
+        }
+      } else {
+        console.log('[USERNAME] Already registered, skipping');
+      }
+
+      // Step 2: Register meta keys
+      console.log('[META KEYS] Registering meta keys on-chain...');
+      console.log('[META KEYS] Account:', embeddedWallet.address);
+
+      try {
+        const receipt = await registerMetaKeysMutation.mutateAsync({
+          provider,
+          account: embeddedWallet.address as `0x${string}`,
+          metaViewingPub: publicKeys.metaViewingPub,
+          metaSpendingPub: publicKeys.metaSpendingPub,
+        });
+
+        console.log('[META KEYS] Meta keys registered on-chain!');
+        console.log('[META KEYS] Transaction receipt:', {
+          hash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber,
+          status: receipt.status,
+        });
+      } catch (registerError) {
+        console.error('[META KEYS] Failed to register meta keys:', registerError);
+        console.error('[META KEYS] Error details:', {
+          message: registerError instanceof Error ? registerError.message : 'Unknown error',
+          stack: registerError instanceof Error ? registerError.stack : undefined,
+          errorType: typeof registerError,
+        });
+        throw registerError;
+      }
+
       // Clear passwords from memory before navigation
+      console.log('[PASSWORD CREATE] Clearing passwords from memory...');
       setPassword('');
       setConfirmPassword('');
 
       // Redirect to dashboard
+      console.log('[PASSWORD CREATE] Redirecting to dashboard...');
       router.push('/app');
+
+      console.log('[PASSWORD CREATE] Flow completed successfully!');
     } catch (err) {
+      console.error('[PASSWORD CREATE] Error in password creation flow:', err);
+      console.error('[PASSWORD CREATE] Error details:', {
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setKeyError(err instanceof Error ? err.message : 'Failed to create keys');
       setIsDerivingKeys(false);
     }
