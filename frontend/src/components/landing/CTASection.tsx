@@ -2,20 +2,25 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useSignMessage, useWallets } from '@privy-io/react-auth';
+import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { useRouter } from 'next/navigation';
+import { encodeFunctionData, keccak256, toBytes } from 'viem';
 import Stepper, { Step } from '@/components/react-bits/Stepper';
 import { Check, X, Loader2, AlertCircle, Wallet, Eye, EyeOff, Shield } from 'lucide-react';
 import { Validation } from '@/lib/username/validation';
 import { Validation as PasswordValidation } from '@/lib/helpers/validation';
 import { parseErrorMessage } from '@/lib/helpers/errors';
 import { keyManager } from '@/lib/keys';
-import { isUsernameAvailable } from '@/lib/contracts';
+import { isUsernameAvailable, getUsernameHash, publicClient } from '@/lib/contracts';
+import { NinahABI } from '@/lib/contracts/abi';
+import { contractAddress } from '@/lib/contracts/addresses';
+import { Bytes } from '@/lib/helpers/bytes';
 import {
   extractCommitmentFromPublicValues,
   extractUsernameHashFromPublicValues,
   encodeProofForContract,
 } from '@/lib/api';
-import { useUsernameProof, useRegisterUsername, useRegisterMetaKeys } from '@/hooks';
+import { useUsernameProof } from '@/hooks';
 
 type UsernameStatus = 'idle' | 'typing' | 'validating' | 'available' | 'taken' | 'invalid';
 type RegistrationStatus = 'idle' | 'generating' | 'submitting' | 'success' | 'error';
@@ -23,6 +28,7 @@ type RegistrationStatus = 'idle' | 'generating' | 'submitting' | 'success' | 'er
 export default function CTASection() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
+  const { client: smartWalletClient } = useSmartWallets();
   const { signMessage } = useSignMessage();
   const router = useRouter();
 
@@ -42,13 +48,13 @@ export default function CTASection() {
   const [isDerivingKeys, setIsDerivingKeys] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
 
-  const walletAddress = user?.wallet?.address || '0x0000000000000000000000000000000000000000';
+  // Smart wallet address is different from embedded wallet (it's a contract account)
+  const smartWalletAddress = smartWalletClient?.account?.address;
+  const walletAddress = smartWalletAddress || user?.wallet?.address || '0x0000000000000000000000000000000000000000';
   const userIdentifier = user?.email?.address || user?.google?.email || user?.twitter?.username || walletAddress;
 
-  // Mutations - using embedded wallet (user pays gas for now)
+  // Mutations - using smart wallet with Coinbase Paymaster (gas sponsored)
   const usernameProofMutation = useUsernameProof();
-  const registerUsernameMutation = useRegisterUsername();
-  const registerMetaKeysMutation = useRegisterMetaKeys();
 
   // Debounce username input
   useEffect(() => {
@@ -112,11 +118,11 @@ export default function CTASection() {
     setUsernameStatus('typing');
   };
 
-  // Handle registration
+  // Handle registration using Smart Wallet (gas sponsored via Paymaster)
   const handleRegister = useCallback(async () => {
-    // Filter for Privy embedded wallet (not external wallets like Rabby)
+    // Filter for Privy embedded wallet (used for signing in proof generation)
     const embeddedWallet = wallets.find((w) => w.walletClientType === 'privy');
-    if (!authenticated || usernameStatus !== 'available' || !embeddedWallet) return;
+    if (!authenticated || usernameStatus !== 'available' || !embeddedWallet || !smartWalletClient) return;
 
     setRegistrationStatus('generating');
     setRegistrationError(null);
@@ -129,7 +135,7 @@ export default function CTASection() {
       // Step 1: Generate ZK proof via backend API
       const proofResult = await usernameProofMutation.mutateAsync({
         username,
-        wallet: embeddedWallet.address, // Use embedded wallet address from Privy
+        wallet: embeddedWallet.address, // Use embedded wallet address for proof
         secret,
       });
 
@@ -139,9 +145,6 @@ export default function CTASection() {
       console.log('proof:', proofResult.proof);
 
       setRegistrationStatus('submitting');
-
-      // Step 2: Switch to Base Sepolia and get wallet provider
-      await embeddedWallet.switchChain(84532); // Base Sepolia chain ID
 
       // Extract commitment from public_values
       const commitment = extractCommitmentFromPublicValues(proofResult.public_values);
@@ -155,15 +158,24 @@ export default function CTASection() {
       const encodedProof = encodeProofForContract(proofResult.vkey, proofResult.public_values, proofResult.proof);
       console.log('Encoded proof for contract:', encodedProof);
 
-      // Step 3: Get wallet provider and submit to contract
-      const provider = await embeddedWallet.getEthereumProvider();
-      const receipt = await registerUsernameMutation.mutateAsync({
-        provider,
-        account: embeddedWallet.address as `0x${string}`,
-        usernameHash, // Privacy: no plaintext username on-chain!
-        commitment,
-        proof: encodedProof, // Use encoded proof (vkey + publicValues + proof)
+      // Step 2: Submit to contract using Smart Wallet (gas sponsored by Paymaster)
+      const txData = encodeFunctionData({
+        abi: NinahABI,
+        functionName: 'RegisterUsername',
+        args: [usernameHash, commitment, encodedProof],
       });
+
+      console.log('[SMART WALLET] Sending transaction with paymaster...');
+      const txHash = await smartWalletClient.sendTransaction({
+        to: contractAddress.NinahContractAddress as `0x${string}`,
+        data: txData,
+      });
+
+      console.log('[SMART WALLET] Transaction hash:', txHash);
+
+      // Wait for receipt
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      console.log('[SMART WALLET] Transaction receipt:', receipt);
 
       if (receipt.status === 'success') {
         setRegistrationStatus('success');
@@ -180,9 +192,9 @@ export default function CTASection() {
       // Zero out secret from memory
       secret.fill(0);
     }
-  }, [authenticated, usernameStatus, username, wallets, usernameProofMutation, registerUsernameMutation]);
+  }, [authenticated, usernameStatus, username, wallets, smartWalletClient, usernameProofMutation]);
 
-  // Handle password submission and key derivation
+  // Handle password submission and key derivation (uses Smart Wallet for gas-sponsored transactions)
   const handleCreatePassword = async () => {
     console.log('[PASSWORD CREATE] Starting password creation flow...');
 
@@ -194,7 +206,7 @@ export default function CTASection() {
       return;
     }
 
-    // Filter for Privy embedded wallet (not external wallets like Rabby)
+    // Filter for Privy embedded wallet (used for message signing in key derivation)
     console.log('[PASSWORD CREATE] Looking for Privy embedded wallet...');
     console.log(
       '[PASSWORD CREATE] Available wallets:',
@@ -208,12 +220,15 @@ export default function CTASection() {
       return;
     }
 
+    // Smart wallet is required for gas-sponsored transactions
+    if (!smartWalletClient) {
+      console.error('[PASSWORD CREATE] Smart wallet not available!');
+      setKeyError('Smart wallet not available');
+      return;
+    }
+
     console.log('[PASSWORD CREATE] Found embedded wallet:', embeddedWallet.address);
-    console.log('[PASSWORD CREATE] Wallet object:', {
-      address: embeddedWallet.address,
-      clientType: embeddedWallet.walletClientType,
-      hasGetProvider: typeof embeddedWallet.getEthereumProvider,
-    });
+    console.log('[PASSWORD CREATE] Smart wallet address:', smartWalletClient.account?.address);
 
     setIsDerivingKeys(true);
     setKeyError(null);
@@ -239,7 +254,7 @@ export default function CTASection() {
       // Initialize keys using keyManager (real implementation)
       // This will:
       // 1. Hash password with Argon2id
-      // 2. Get wallet signature for two-factor derivation
+      // 2. Get wallet signature for two-factor derivation (using embedded wallet)
       // 3. Derive master key using HKDF-Keccak256
       // 4. Generate viewing/spending keypairs
       // 5. Encrypt and store keys in IndexedDB
@@ -276,49 +291,49 @@ export default function CTASection() {
         spendingPubLength: publicKeys.metaSpendingPub.length,
       });
 
-      // Get wallet provider for transactions
-      console.log('[WALLET] Getting Ethereum provider...');
-      const provider = await embeddedWallet.getEthereumProvider();
-      console.log('[WALLET] Provider obtained');
-
-      // Check if user already has a username registered
+      // Check if user already has a username registered (use smart wallet address for check)
       console.log('[USERNAME] Checking if username already registered...');
-      const { getUsernameHash } = await import('@/lib/contracts');
-      const existingUsernameHash = await getUsernameHash(embeddedWallet.address as `0x${string}`);
+      const smartWalletAddr = smartWalletClient.account?.address as `0x${string}`;
+      const existingUsernameHash = await getUsernameHash(smartWalletAddr);
       const hasUsername = existingUsernameHash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
 
       console.log('[USERNAME] Check result:', { hasUsername, existingHash: existingUsernameHash });
 
-      // Step 1: Register username (only if not already registered)
+      // Step 1: Register username (only if not already registered) - using Smart Wallet
       if (!hasUsername) {
-        console.log('[USERNAME] Registering username on-chain...');
+        console.log('[USERNAME] Registering username on-chain via Smart Wallet...');
         console.log('[USERNAME] Username:', username);
 
         try {
           // Generate username hash
-          const { keccak256, toBytes } = await import('viem');
           const usernameHash = keccak256(toBytes(username));
           console.log('[USERNAME] Username hash:', usernameHash);
 
           // Generate mock proof
-          const { generateUsernameProof, encodeProofForContract } = await import('@/lib/api/proof');
+          const { generateUsernameProof, encodeProofForContract: encodeProof } = await import('@/lib/api/proof');
           const mockProof = await generateUsernameProof({
             username,
-            wallet: embeddedWallet.address as `0x${string}`,
+            wallet: smartWalletAddr,
           });
 
-          const encodedProof = encodeProofForContract(mockProof);
+          const encodedProof = encodeProof(mockProof);
           console.log('[USERNAME] Mock proof generated');
 
-          // Register username
-          const { registerUsername } = await import('@/lib/contracts');
-          const usernameReceipt = await registerUsername(
-            provider,
-            embeddedWallet.address as `0x${string}`,
-            usernameHash,
-            mockProof.commitment,
-            encodedProof,
-          );
+          // Register username via Smart Wallet (gas sponsored)
+          const txData = encodeFunctionData({
+            abi: NinahABI,
+            functionName: 'RegisterUsername',
+            args: [usernameHash, mockProof.commitment, encodedProof],
+          });
+
+          console.log('[SMART WALLET] Sending RegisterUsername transaction...');
+          const txHash = await smartWalletClient.sendTransaction({
+            to: contractAddress.NinahContractAddress as `0x${string}`,
+            data: txData,
+          });
+
+          console.log('[SMART WALLET] Transaction hash:', txHash);
+          const usernameReceipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
           console.log('[USERNAME] Username registered!');
           console.log('[USERNAME] TX:', usernameReceipt.transactionHash);
@@ -332,17 +347,29 @@ export default function CTASection() {
         console.log('[USERNAME] Already registered, skipping');
       }
 
-      // Step 2: Register meta keys
-      console.log('[META KEYS] Registering meta keys on-chain...');
-      console.log('[META KEYS] Account:', embeddedWallet.address);
+      // Step 2: Register meta keys via Smart Wallet (gas sponsored)
+      console.log('[META KEYS] Registering meta keys on-chain via Smart Wallet...');
+      console.log('[META KEYS] Smart wallet address:', smartWalletAddr);
 
       try {
-        const receipt = await registerMetaKeysMutation.mutateAsync({
-          provider,
-          account: embeddedWallet.address as `0x${string}`,
-          metaViewingPub: publicKeys.metaViewingPub,
-          metaSpendingPub: publicKeys.metaSpendingPub,
+        // Convert Uint8Array to hex string
+        const viewingPubHex = Bytes.bytesToHex(publicKeys.metaViewingPub) as `0x${string}`;
+        const spendingPubHex = Bytes.bytesToHex(publicKeys.metaSpendingPub) as `0x${string}`;
+
+        const txData = encodeFunctionData({
+          abi: NinahABI,
+          functionName: 'registerMetaKeys',
+          args: [viewingPubHex, spendingPubHex],
         });
+
+        console.log('[SMART WALLET] Sending registerMetaKeys transaction...');
+        const txHash = await smartWalletClient.sendTransaction({
+          to: contractAddress.NinahContractAddress as `0x${string}`,
+          data: txData,
+        });
+
+        console.log('[SMART WALLET] Transaction hash:', txHash);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
         console.log('[META KEYS] Meta keys registered on-chain!');
         console.log('[META KEYS] Transaction receipt:', {
@@ -498,9 +525,10 @@ export default function CTASection() {
               <h3 className='text-2xl font-bold mb-3 text-foreground font-grotesk'>Connect Wallet</h3>
               <p className='text-base text-muted-foreground mb-6 font-poppins'>
                 {(() => {
-                  const embeddedWallet = wallets.find((w) => w.walletClientType === 'privy');
-                  return authenticated && embeddedWallet
-                    ? `Connected as ${embeddedWallet.address.slice(0, 6)}...${embeddedWallet.address.slice(-4)}`
+                  // Show smart wallet address (contract account) - this is where transactions will be sent from
+                  const addr = smartWalletClient?.account?.address;
+                  return authenticated && addr
+                    ? `Smart Wallet: ${addr.slice(0, 6)}...${addr.slice(-4)}`
                     : 'Link your wallet to secure your username with a zero-knowledge proof.';
                 })()}
               </p>
