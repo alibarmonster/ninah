@@ -279,10 +279,7 @@ export class Address {
    * );
    * ```
    */
-  static generateStealthPayment(
-    metaViewingPub: Uint8Array,
-    metaSpendingPub: Uint8Array,
-  ): StealthPaymentGeneration {
+  static generateStealthPayment(metaViewingPub: Uint8Array, metaSpendingPub: Uint8Array): StealthPaymentGeneration {
     if (!Secp256k1.isValidPublicKey(metaViewingPub)) {
       throw new PaymentError('Invalid meta viewing public key');
     }
