@@ -1,6 +1,8 @@
 'use client';
 
 import { PrivyProvider } from '@privy-io/react-auth';
+import { SmartWalletsProvider } from '@privy-io/react-auth/smart-wallets';
+import { baseSepolia } from 'viem/chains';
 import { ReactNode } from 'react';
 
 export default function PrivyProviderWrapper({ children }: { children: ReactNode }) {
@@ -14,8 +16,15 @@ export default function PrivyProviderWrapper({ children }: { children: ReactNode
           logo: '/ninah-only-logo.svg',
         },
         loginMethods: ['email', 'google', 'twitter'],
+        embeddedWallets: {
+          ethereum: {
+            createOnLogin: 'all-users',
+          },
+        },
+        defaultChain: baseSepolia,
+        supportedChains: [baseSepolia],
       }}>
-      {children}
+      <SmartWalletsProvider>{children}</SmartWalletsProvider>
     </PrivyProvider>
   );
 }
