@@ -26,13 +26,14 @@
     "lucide-react": "^0.562.0",
     "motion": "^12.23.26",
     "next": "16.1.0",
+    "permissionless": "^0.3.2",
     "postprocessing": "^6.36.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-icons": "^5.5.0",
     "tailwind-merge": "^3.4.0",
     "three": "^0.167.1",
-    "viem": "^2.43.4",
+    "viem": "^2.44.1",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
