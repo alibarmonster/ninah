@@ -91,13 +91,9 @@ export default function Stepper({
   const isNextDisabled = canProceed ? !canProceed(currentStep) : false;
 
   return (
-    <div
-      className="flex min-h-full flex-1 flex-col items-center justify-center p-4"
-      {...rest}
-    >
+    <div className='flex min-h-full flex-1 flex-col items-center justify-center p-4' {...rest}>
       <div
-        className={`mx-auto w-full max-w-md rounded-2xl shadow-xl bg-card border border-border ${stepCircleContainerClassName}`}
-      >
+        className={`mx-auto w-full max-w-md rounded-2xl shadow-xl bg-card border border-border ${stepCircleContainerClassName}`}>
         <div className={`${stepContainerClassName} flex w-full items-center p-8`}>
           {stepsArray.map((_, index) => {
             const stepNumber = index + 1;
@@ -108,17 +104,17 @@ export default function Stepper({
                   renderStepIndicator({
                     step: stepNumber,
                     currentStep,
-                    onStepClick: clicked => {
+                    onStepClick: (clicked) => {
                       setDirection(clicked > currentStep ? 1 : -1);
                       updateStep(clicked);
-                    }
+                    },
                   })
                 ) : (
                   <StepIndicator
                     step={stepNumber}
                     disableStepIndicators={disableStepIndicators}
                     currentStep={currentStep}
-                    onClickStep={clicked => {
+                    onClickStep={(clicked) => {
                       setDirection(clicked > currentStep ? 1 : -1);
                       updateStep(clicked);
                     }}
@@ -134,8 +130,7 @@ export default function Stepper({
           isCompleted={isCompleted}
           currentStep={currentStep}
           direction={direction}
-          className={`space-y-2 px-8 ${contentClassName}`}
-        >
+          className={`space-y-2 px-8 ${contentClassName}`}>
           {stepsArray[currentStep - 1]}
         </StepContentWrapper>
 
@@ -150,17 +145,17 @@ export default function Stepper({
                       ? 'pointer-events-none opacity-50 text-muted-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
-                  {...backButtonProps}
-                >
+                  {...backButtonProps}>
                   {backButtonText}
                 </button>
               )}
               <button
                 onClick={isLastStep ? handleComplete : handleNext}
                 disabled={isNextDisabled}
-                className={`duration-350 flex items-center justify-center rounded-full bg-primary py-1.5 px-3.5 font-medium tracking-tight text-primary-foreground transition font-poppins ${isNextDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'}`}
-                {...nextButtonProps}
-              >
+                className={`duration-350 flex items-center justify-center rounded-full bg-primary py-1.5 px-3.5 font-medium tracking-tight text-primary-foreground transition font-poppins ${
+                  isNextDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+                }`}
+                {...nextButtonProps}>
                 {isLastStep ? 'Complete' : nextButtonText}
               </button>
             </div>
@@ -184,7 +179,7 @@ function StepContentWrapper({
   currentStep,
   direction,
   children,
-  className = ''
+  className = '',
 }: StepContentWrapperProps) {
   const [parentHeight, setParentHeight] = useState<number>(0);
 
@@ -193,11 +188,10 @@ function StepContentWrapper({
       style={{ position: 'relative', overflow: 'hidden' }}
       animate={{ height: isCompleted ? 0 : parentHeight }}
       transition={{ type: 'spring', duration: 0.4 }}
-      className={className}
-    >
-      <AnimatePresence initial={false} mode="sync" custom={direction}>
+      className={`${className} pointer-events-none`}>
+      <AnimatePresence initial={false} mode='sync' custom={direction}>
         {!isCompleted && (
-          <SlideTransition key={currentStep} direction={direction} onHeightReady={h => setParentHeight(h)}>
+          <SlideTransition key={currentStep} direction={direction} onHeightReady={(h) => setParentHeight(h)}>
             {children}
           </SlideTransition>
         )}
@@ -226,12 +220,12 @@ function SlideTransition({ children, direction, onHeightReady }: SlideTransition
       ref={containerRef}
       custom={direction}
       variants={stepVariants}
-      initial="enter"
-      animate="center"
-      exit="exit"
+      initial='enter'
+      animate='center'
+      exit='exit'
       transition={{ duration: 0.4 }}
       style={{ position: 'absolute', left: 0, right: 0, top: 0 }}
-    >
+      className='pointer-events-auto'>
       {children}
     </motion.div>
   );
@@ -240,16 +234,16 @@ function SlideTransition({ children, direction, onHeightReady }: SlideTransition
 const stepVariants: Variants = {
   enter: (dir: number) => ({
     x: dir >= 0 ? '-100%' : '100%',
-    opacity: 0
+    opacity: 0,
   }),
   center: {
     x: '0%',
-    opacity: 1
+    opacity: 1,
   },
   exit: (dir: number) => ({
     x: dir >= 0 ? '50%' : '-50%',
-    opacity: 0
-  })
+    opacity: 0,
+  }),
 };
 
 interface StepProps {
@@ -257,7 +251,7 @@ interface StepProps {
 }
 
 export function Step({ children }: StepProps) {
-  return <div className="px-8">{children}</div>;
+  return <div className='px-8'>{children}</div>;
 }
 
 interface StepIndicatorProps {
@@ -279,25 +273,23 @@ function StepIndicator({ step, currentStep, onClickStep, disableStepIndicators =
   return (
     <motion.div
       onClick={handleClick}
-      className="relative cursor-pointer outline-none focus:outline-none"
+      className='relative cursor-pointer outline-none focus:outline-none'
       animate={status}
-      initial={false}
-    >
+      initial={false}>
       <motion.div
         variants={{
           inactive: { scale: 1, backgroundColor: 'oklch(var(--muted))', color: 'oklch(var(--muted-foreground))' },
           active: { scale: 1, backgroundColor: 'oklch(var(--primary))', color: 'oklch(var(--primary))' },
-          complete: { scale: 1, backgroundColor: 'oklch(var(--primary))', color: 'oklch(var(--primary-foreground))' }
+          complete: { scale: 1, backgroundColor: 'oklch(var(--primary))', color: 'oklch(var(--primary-foreground))' },
         }}
         transition={{ duration: 0.3 }}
-        className="flex h-8 w-8 items-center justify-center rounded-full font-semibold"
-      >
+        className='flex h-8 w-8 items-center justify-center rounded-full font-semibold'>
         {status === 'complete' ? (
-          <CheckIcon className="h-4 w-4 text-background" />
+          <CheckIcon className='h-4 w-4 text-background' />
         ) : status === 'active' ? (
-          <div className="h-3 w-3 rounded-full bg-background" />
+          <div className='h-3 w-3 rounded-full bg-background' />
         ) : (
-          <span className="text-sm">{step}</span>
+          <span className='text-sm'>{step}</span>
         )}
       </motion.div>
     </motion.div>
@@ -311,13 +303,13 @@ interface StepConnectorProps {
 function StepConnector({ isComplete }: StepConnectorProps) {
   const lineVariants: Variants = {
     incomplete: { width: 0, backgroundColor: 'transparent' },
-    complete: { width: '100%', backgroundColor: 'oklch(var(--primary))' }
+    complete: { width: '100%', backgroundColor: 'oklch(var(--primary))' },
   };
 
   return (
-    <div className="relative mx-2 h-0.5 flex-1 overflow-hidden rounded bg-border">
+    <div className='relative mx-2 h-0.5 flex-1 overflow-hidden rounded bg-border'>
       <motion.div
-        className="absolute left-0 top-0 h-full"
+        className='absolute left-0 top-0 h-full'
         variants={lineVariants}
         initial={false}
         animate={isComplete ? 'complete' : 'incomplete'}
@@ -331,7 +323,7 @@ interface CheckIconProps extends React.SVGProps<SVGSVGElement> {}
 
 function CheckIcon(props: CheckIconProps) {
   return (
-    <svg {...props} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg {...props} fill='none' stroke='currentColor' strokeWidth={2} viewBox='0 0 24 24'>
       <motion.path
         initial={{ pathLength: 0 }}
         animate={{ pathLength: 1 }}
@@ -339,11 +331,11 @@ function CheckIcon(props: CheckIconProps) {
           delay: 0.1,
           type: 'tween',
           ease: 'easeOut',
-          duration: 0.3
+          duration: 0.3,
         }}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M5 13l4 4L19 7"
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        d='M5 13l4 4L19 7'
       />
     </svg>
   );
