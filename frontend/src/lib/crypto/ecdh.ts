@@ -133,8 +133,9 @@ export class Ecdh {
     try {
       const publicPoint = secp256k1.ProjectivePoint.fromHex(publicKey);
 
+      // bytesToHex already includes 0x prefix, so pass directly to BigInt
       const privateKeyHex = Bytes.bytesToHex(privateKey);
-      const sharedPoint = publicPoint.multiply(BigInt('0x' + privateKeyHex));
+      const sharedPoint = publicPoint.multiply(BigInt(privateKeyHex));
 
       const sharedSecret = sharedPoint.toRawBytes(true).slice(1);
 
