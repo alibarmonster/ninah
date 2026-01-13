@@ -179,6 +179,15 @@ export default function CTASection() {
 
       if (receipt.status === 'success') {
         setRegistrationStatus('success');
+
+        // Save username to localStorage for later retrieval
+        // Use smart wallet address as the key since that's what useUsername expects
+        const smartWalletAddr = smartWalletClient.account?.address;
+        if (smartWalletAddr) {
+          const storageKey = `ninah_username_${smartWalletAddr}`;
+          localStorage.setItem(storageKey, username);
+          console.log('[USERNAME] Username saved to localStorage:', storageKey);
+        }
       } else {
         setRegistrationStatus('error');
         setRegistrationError('Transaction reverted');
@@ -337,6 +346,11 @@ export default function CTASection() {
 
           console.log('[USERNAME] Username registered!');
           console.log('[USERNAME] TX:', usernameReceipt.transactionHash);
+
+          // Save username to localStorage for later retrieval
+          const storageKey = `ninah_username_${smartWalletAddr}`;
+          localStorage.setItem(storageKey, username);
+          console.log('[USERNAME] Username saved to localStorage:', storageKey);
         } catch (usernameError) {
           console.error('[USERNAME] Failed:', usernameError);
           throw new Error(
@@ -345,6 +359,13 @@ export default function CTASection() {
         }
       } else {
         console.log('[USERNAME] Already registered, skipping');
+
+        // Still save to localStorage in case it was cleared
+        const storageKey = `ninah_username_${smartWalletAddr}`;
+        if (!localStorage.getItem(storageKey) && username) {
+          localStorage.setItem(storageKey, username);
+          console.log('[USERNAME] Username saved to localStorage (was missing):', storageKey);
+        }
       }
 
       // Step 2: Register meta keys via Smart Wallet (gas sponsored)
