@@ -230,12 +230,12 @@ export default function SendPage() {
                     type='text'
                     value={recipient}
                     onChange={(e) => setRecipient(e.target.value)}
-                    placeholder='@username or 0x...'
+                    placeholder='username'
                     className='w-full pl-10 pr-4 py-3 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-800 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary font-poppins'
                   />
                 </div>
                 <p className='text-xs text-neutral-500 dark:text-neutral-400 mt-2 font-poppins'>
-                  Enter a Ninah username (e.g. @john) or wallet address
+                  Enter a Ninah username (e.g. john) or wallet address
                 </p>
               </div>
 
@@ -282,9 +282,7 @@ export default function SendPage() {
                     <span className='font-medium font-poppins'>Payment sent successfully!</span>
                   </div>
                   {txHash && (
-                    <p className='mt-2 text-xs text-green-600 dark:text-green-500 font-mono break-all'>
-                      Tx: {txHash}
-                    </p>
+                    <p className='mt-2 text-xs text-green-600 dark:text-green-500 font-mono break-all'>Tx: {txHash}</p>
                   )}
                 </div>
               )}
@@ -303,7 +301,9 @@ export default function SendPage() {
                 size='lg'
                 className='w-full font-poppins font-semibold text-lg'
                 onClick={handleSend}
-                disabled={!recipient || !amount || (sendStatus !== 'idle' && sendStatus !== 'success' && sendStatus !== 'error')}>
+                disabled={
+                  !recipient || !amount || (sendStatus !== 'idle' && sendStatus !== 'success' && sendStatus !== 'error')
+                }>
                 {sendStatus === 'resolving' && (
                   <>
                     <IconLoader2 className='h-5 w-5 mr-2 animate-spin' />
