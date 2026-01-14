@@ -1,9 +1,18 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { Card } from '@/components/ui/card';
-import { IconWallet, IconArrowsExchange, IconDownload, IconTrendingUp } from '@tabler/icons-react';
+import { Button } from '@/components/ui/button';
+import {
+  IconWallet,
+  IconArrowsExchange,
+  IconDownload,
+  IconTrendingUp,
+  IconSend,
+  IconChevronLeft,
+  IconChevronRight,
+} from '@tabler/icons-react';
 import { useWalletBalance, useStealthPayments } from '@/hooks';
 
 export default function DashboardPage() {
@@ -58,11 +67,11 @@ export default function DashboardPage() {
       loading: paymentsLoading,
     },
     {
-      title: 'Unclaimed',
-      value: formatIDRBalance(stats.totalUnclaimed),
-      icon: IconArrowsExchange,
-      change: stats.totalUnclaimed !== '0' ? 'Ready' : '-',
-      changeType: 'positive' as const,
+      title: 'Total Sent',
+      value: formatIDRBalance(stats.totalSent),
+      icon: IconSend,
+      change: stats.totalSent !== '0' ? 'Sent' : '-',
+      changeType: 'neutral' as const,
       loading: paymentsLoading,
     },
     {
@@ -75,8 +84,22 @@ export default function DashboardPage() {
     },
   ];
 
-  // Get recent transactions (last 4)
-  const recentTransactions = transactions.slice(0, 4);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+  const totalPages = Math.ceil(transactions.length / itemsPerPage);
+
+  // Get paginated transactions
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedTransactions = transactions.slice(startIndex, startIndex + itemsPerPage);
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  };
 
   return (
     <div className='flex flex-1 flex-col'>
@@ -120,7 +143,9 @@ export default function DashboardPage() {
                       className={`text-sm font-medium font-poppins ${
                         stat.changeType === 'positive'
                           ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
+                          : stat.changeType === 'neutral'
+                            ? 'text-neutral-600 dark:text-neutral-400'
+                            : 'text-red-600 dark:text-red-400'
                       }`}>
                       {stat.change}
                     </p>
@@ -134,19 +159,19 @@ export default function DashboardPage() {
           })}
         </div>
 
-        {/* Recent Transactions */}
+        {/* Payment History */}
         <Card className='p-6'>
           <h2 className='text-2xl font-bold text-neutral-800 dark:text-neutral-100 mb-6 font-grotesk'>
-            Recent Stealth Payments
+            Payment History
           </h2>
 
           {paymentsLoading ? (
             <div className='space-y-4'>
-              {[1, 2, 3, 4].map((i) => (
+              {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className='h-16 bg-neutral-100 dark:bg-neutral-800/50 rounded-lg animate-pulse' />
               ))}
             </div>
-          ) : recentTransactions.length === 0 ? (
+          ) : transactions.length === 0 ? (
             <div className='text-center py-12'>
               <IconArrowsExchange className='h-12 w-12 text-neutral-400 dark:text-neutral-600 mx-auto mb-4' />
               <p className='text-neutral-600 dark:text-neutral-400 font-poppins'>
@@ -154,36 +179,86 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : (
-            <div className='space-y-4'>
-              {recentTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className='flex items-center justify-between p-4 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors'>
-                  <div className='flex items-center gap-4'>
-                    <div className='p-2 rounded-full bg-green-100 dark:bg-green-900/30'>
-                      <IconDownload className='h-5 w-5 text-green-600 dark:text-green-400' />
+            <>
+              <div className='space-y-4'>
+                {paginatedTransactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className='flex items-center justify-between p-4 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors'>
+                    <div className='flex items-center gap-4'>
+                      <div
+                        className={`p-2 rounded-full ${
+                          transaction.type === 'sent'
+                            ? 'bg-red-100 dark:bg-red-900/30'
+                            : 'bg-green-100 dark:bg-green-900/30'
+                        }`}>
+                        {transaction.type === 'sent' ? (
+                          <IconSend className='h-5 w-5 text-red-600 dark:text-red-400' />
+                        ) : (
+                          <IconDownload className='h-5 w-5 text-green-600 dark:text-green-400' />
+                        )}
+                      </div>
+                      <div>
+                        <p className='font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>
+                          {transaction.type === 'sent' ? 'Sent to someone' : 'Received from someone'}
+                        </p>
+                        <p className='text-sm text-neutral-600 dark:text-neutral-400 font-poppins'>
+                          {formatRelativeTime(transaction.timestamp)} • Stealth:{' '}
+                          {truncateAddress(transaction.stealthAddress)}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className='font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>
-                        Received from {truncateAddress(transaction.sender)}
+                    <div className='text-right'>
+                      <p
+                        className={`font-bold font-grotesk ${
+                          transaction.type === 'sent'
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-green-600 dark:text-green-400'
+                        }`}>
+                        {transaction.type === 'sent' ? '- ' : '+ '}
+                        {formatIDRBalance(transaction.amount)}
                       </p>
-                      <p className='text-sm text-neutral-600 dark:text-neutral-400 font-poppins'>
-                        {formatRelativeTime(transaction.timestamp)} • Stealth:{' '}
-                        {truncateAddress(transaction.stealthAddress)}
+                      <p className='text-sm text-neutral-600 dark:text-neutral-400 font-poppins capitalize'>
+                        {transaction.type === 'sent'
+                          ? 'Sent'
+                          : transaction.status === 'claimed'
+                            ? 'Claimed'
+                            : 'Ready to Claim'}
                       </p>
                     </div>
                   </div>
-                  <div className='text-right'>
-                    <p className='font-bold font-grotesk text-green-600 dark:text-green-400'>
-                      + {formatIDRBalance(transaction.amount)}
-                    </p>
-                    <p className='text-sm text-neutral-600 dark:text-neutral-400 font-poppins capitalize'>
-                      {transaction.status === 'claimed' ? 'Claimed' : 'Ready to Claim'}
-                    </p>
+                ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className='flex items-center justify-between mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700'>
+                  <p className='text-sm text-neutral-600 dark:text-neutral-400 font-poppins'>
+                    Page {currentPage} of {totalPages}
+                  </p>
+                  <div className='flex items-center gap-2'>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={handlePrevPage}
+                      disabled={currentPage === 1}
+                      className='font-poppins'>
+                      <IconChevronLeft className='h-4 w-4 mr-1' />
+                      Previous
+                    </Button>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={handleNextPage}
+                      disabled={currentPage === totalPages}
+                      className='font-poppins'>
+                      Next
+                      <IconChevronRight className='h-4 w-4 ml-1' />
+                    </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </Card>
       </div>
