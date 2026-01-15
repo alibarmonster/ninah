@@ -4,7 +4,7 @@ import React from 'react';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { IconCopy, IconEye, IconEyeOff, IconQrcode, IconDroplet, IconLoader2 } from '@tabler/icons-react';
+import { IconEye, IconEyeOff, IconDroplet, IconLoader2 } from '@tabler/icons-react';
 import { useWalletBalance } from '@/hooks';
 import { useRouter } from 'next/navigation';
 
@@ -16,8 +16,6 @@ export default function WalletPage() {
   const walletAddress = (smartWalletClient?.account?.address as `0x${string}`) || undefined;
 
   const [showBalance, setShowBalance] = React.useState(true);
-  const [showAddress, setShowAddress] = React.useState(false);
-  const [copied, setCopied] = React.useState<'wallet' | 'stealth' | null>(null);
 
   // Faucet state
   const [faucetLoading, setFaucetLoading] = React.useState(false);
@@ -25,7 +23,12 @@ export default function WalletPage() {
   const [faucetError, setFaucetError] = React.useState<string | null>(null);
 
   // Fetch wallet balance
-  const { balance, loading: balanceLoading, error: balanceError, refetch: refetchBalance } = useWalletBalance(walletAddress);
+  const {
+    balance,
+    loading: balanceLoading,
+    error: balanceError,
+    refetch: refetchBalance,
+  } = useWalletBalance(walletAddress);
 
   // Request tokens from faucet
   const requestFaucet = async () => {
@@ -64,20 +67,6 @@ export default function WalletPage() {
     const num = parseFloat(balance);
     return `Rp ${num.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
   };
-
-  const copyToClipboard = async (text: string, type: 'wallet' | 'stealth') => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(type);
-      setTimeout(() => setCopied(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy:', error);
-    }
-  };
-
-  // For stealth address - this would come from meta keys registration
-  // For now showing a placeholder until the user registers meta keys
-  const stealthAddress = 'st:0x9a3f...7b2c'; // TODO: Generate from meta keys
 
   return (
     <div className='flex flex-1 flex-col'>
@@ -161,82 +150,8 @@ export default function WalletPage() {
           {faucetMessage && (
             <p className='mt-3 text-sm text-green-600 dark:text-green-400 font-poppins'>{faucetMessage}</p>
           )}
-          {faucetError && (
-            <p className='mt-3 text-sm text-red-600 dark:text-red-400 font-poppins'>{faucetError}</p>
-          )}
+          {faucetError && <p className='mt-3 text-sm text-red-600 dark:text-red-400 font-poppins'>{faucetError}</p>}
         </Card>
-
-        {/* Wallet Addresses */}
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-6 mb-6'>
-          {/* Regular Wallet Address */}
-          <Card className='p-6'>
-            <h3 className='text-xl font-bold text-neutral-800 dark:text-neutral-100 mb-4 font-grotesk'>
-              Wallet Address
-            </h3>
-            <div className='bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg mb-4'>
-              <p className='text-sm text-neutral-600 dark:text-neutral-400 mb-2 font-poppins'>Your wallet address</p>
-              {walletAddress ? (
-                <div className='flex items-center justify-between gap-2'>
-                  <p className='text-sm font-mono text-neutral-800 dark:text-neutral-100 break-all'>
-                    {showAddress ? walletAddress : `${walletAddress.slice(0, 10)}...${walletAddress.slice(-8)}`}
-                  </p>
-                  <button
-                    onClick={() => setShowAddress(!showAddress)}
-                    className='p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded transition-colors flex-shrink-0'>
-                    {showAddress ? (
-                      <IconEyeOff className='h-4 w-4 text-neutral-600 dark:text-neutral-400' />
-                    ) : (
-                      <IconEye className='h-4 w-4 text-neutral-600 dark:text-neutral-400' />
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <p className='text-sm text-neutral-500 dark:text-neutral-400 font-poppins'>No wallet connected</p>
-              )}
-            </div>
-            <div className='flex gap-2'>
-              <Button
-                variant='outline'
-                size='sm'
-                className='flex-1 font-poppins'
-                onClick={() => walletAddress && copyToClipboard(walletAddress, 'wallet')}
-                disabled={!walletAddress}>
-                <IconCopy className='h-4 w-4 mr-2' />
-                {copied === 'wallet' ? 'Copied!' : 'Copy'}
-              </Button>
-              <Button variant='outline' size='sm' className='flex-1 font-poppins' disabled={!walletAddress}>
-                <IconQrcode className='h-4 w-4 mr-2' />
-                QR Code
-              </Button>
-            </div>
-          </Card>
-
-          {/* Stealth Address */}
-          <Card className='p-6'>
-            <h3 className='text-xl font-bold text-neutral-800 dark:text-neutral-100 mb-4 font-grotesk'>
-              Stealth Address
-            </h3>
-            <div className='bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg mb-4'>
-              <p className='text-sm text-neutral-600 dark:text-neutral-400 mb-2 font-poppins'>
-                One-time receiving address
-              </p>
-              <p className='text-sm font-mono text-neutral-800 dark:text-neutral-100'>{stealthAddress}</p>
-            </div>
-            <div className='flex gap-2'>
-              <Button
-                variant='outline'
-                size='sm'
-                className='flex-1 font-poppins'
-                onClick={() => copyToClipboard(stealthAddress, 'stealth')}>
-                <IconCopy className='h-4 w-4 mr-2' />
-                {copied === 'stealth' ? 'Copied!' : 'Copy'}
-              </Button>
-              <Button variant='outline' size='sm' className='flex-1 font-poppins'>
-                Generate New
-              </Button>
-            </div>
-          </Card>
-        </div>
 
         {/* Token Holdings */}
         <Card className='p-6'>
