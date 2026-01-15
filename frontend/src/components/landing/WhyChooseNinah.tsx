@@ -21,13 +21,13 @@ const ninahCardData: BentoCardProps[] = [
     label: 'Infrastructure',
   },
   {
-    title: 'Peer-to-Peer',
-    description: 'Direct payments without intermediaries or central authority',
-    label: 'Decentralized',
+    title: 'Self Custody',
+    description: 'Smart contract secured, no one can freeze or seize your funds',
+    label: 'Trustless',
   },
   {
-    title: 'IDRX Native',
-    description: 'Seamless integration with Indonesian Rupiah stablecoin',
+    title: 'Stablecoin Native',
+    description: 'Seamless integration with Stablecoin currency',
     label: 'Currency',
   },
   {
