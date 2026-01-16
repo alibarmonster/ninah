@@ -7,13 +7,13 @@ const tokenAddress = contractAddress.MockIDRXAddress as `0x${string}`;
 
 // READ FUNCTIONS
 
-export async function getBalance(address: `0x${string}`) {
-  return await publicClient.readContract({
+export async function getBalance(address: `0x${string}`): Promise<bigint> {
+  return (await publicClient.readContract({
     address: tokenAddress,
     abi: MockIDRXABI,
     functionName: 'balanceOf',
     args: [address],
-  });
+  })) as bigint;
 }
 
 export async function getAllowance(owner: `0x${string}`, spender: `0x${string}`): Promise<bigint> {
