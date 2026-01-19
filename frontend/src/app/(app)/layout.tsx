@@ -17,6 +17,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import AuthGuard from '@/components/providers/AuthGuard';
+import OnboardingTour from '@/components/onboarding/OnboardingTour';
 import { keyManager } from '@/lib/keys';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +61,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthGuard>
+      <OnboardingTour />
       <div
         className={cn(
           'flex flex-col md:flex-row bg-gray-100 dark:bg-neutral-800 w-full flex-1 mx-auto border border-neutral-200 dark:border-neutral-700 overflow-hidden',
