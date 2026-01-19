@@ -11,7 +11,9 @@ import {
   IconShield,
   IconLanguage,
   IconDevices,
+  IconPlayerPlay,
 } from '@tabler/icons-react';
+import { resetOnboardingTour } from '@/components/onboarding';
 
 export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
@@ -201,6 +203,28 @@ export default function SettingsPage() {
                 </div>
                 <Button variant='outline' size='sm' className='font-poppins'>
                   Change
+                </Button>
+              </div>
+
+              <div className='flex items-center justify-between p-4 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg'>
+                <div className='flex items-center gap-3'>
+                  <IconPlayerPlay className='h-5 w-5 text-neutral-600 dark:text-neutral-400' />
+                  <div>
+                    <p className='font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>App Tour</p>
+                    <p className='text-sm text-neutral-600 dark:text-neutral-400 font-poppins'>
+                      Replay the onboarding guide
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='font-poppins'
+                  onClick={() => {
+                    resetOnboardingTour();
+                    window.location.reload();
+                  }}>
+                  Replay
                 </Button>
               </div>
             </div>
