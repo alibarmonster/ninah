@@ -3,6 +3,7 @@
 import React from 'react';
 import Hero from './Hero';
 import WhyChooseNinah from './WhyChooseNinah';
+import HowItWorks from './HowItWorks';
 import CTASection from './CTASection';
 import Footer from './Footer';
 
@@ -44,6 +45,7 @@ export default function LandingPage() {
     <>
       <Hero navItems={navItems} />
       <WhyChooseNinah />
+      <HowItWorks />
       <CTASection />
       <Footer />
     </>
