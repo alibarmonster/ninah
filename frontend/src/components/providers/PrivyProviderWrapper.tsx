@@ -15,7 +15,7 @@ export default function PrivyProviderWrapper({ children }: { children: ReactNode
           accentColor: '#60a5fa',
           logo: '/ninah-only-logo.svg',
         },
-        loginMethods: ['email', 'google', 'twitter'],
+        loginMethods: ['email', 'twitter', 'farcaster'],
         embeddedWallets: {
           ethereum: {
             createOnLogin: 'all-users',
