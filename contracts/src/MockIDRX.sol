@@ -4,11 +4,12 @@ pragma solidity ^0.8.23;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
 /// @title MockIDRX
 /// @notice Mock Indonesian Rupiah stablecoin for testing
-/// @dev ERC20 token with 6 decimals, mimicking USDC/USDT style stablecoins
-contract MockIDRX is ERC20, Ownable2Step {
+/// @dev ERC20 token with 6 decimals and EIP-2612 permit for gasless approvals
+contract MockIDRX is ERC20, ERC20Permit, Ownable2Step {
     uint8 private constant DECIMALS = 6;
     uint256 public constant MAX_SUPPLY = 1_000_000_000 * 10 ** 6;
     uint256 public constant MAX_BATCH_SIZE = 100;
@@ -16,7 +17,7 @@ contract MockIDRX is ERC20, Ownable2Step {
     event Minted(address indexed to, uint256 amount);
     event Burned(address indexed from, uint256 amount);
 
-    constructor() ERC20("Mock IDRX", "nIDRX") Ownable(msg.sender) {}
+    constructor() ERC20("Mock IDRX", "nIDRX") ERC20Permit("Mock IDRX") Ownable(msg.sender) {}
 
     function decimals() public pure override returns (uint8) {
         return DECIMALS;
