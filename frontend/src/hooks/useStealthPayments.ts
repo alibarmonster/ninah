@@ -7,6 +7,45 @@ import { Address } from '@/lib/stealth';
 import { keyManager } from '@/lib/keys/manager';
 import { Bytes } from '@/lib/helpers/bytes';
 
+// Constants for scanning
+const CONTRACT_DEPLOYMENT_BLOCK = BigInt(36503234);
+const CHUNK_SIZE = BigInt(10000); // Base Sepolia RPC supports up to 100k blocks
+
+// localStorage keys
+const STORAGE_KEYS = {
+  LAST_SCANNED_BLOCK: 'ninah_last_scanned_block',
+  CACHED_PAYMENTS: 'ninah_cached_payments',
+};
+
+// Helper to calculate stats
+function calculateStats(payments: { type: string; rawAmount: bigint; status: string }[]) {
+  let totalReceived = BigInt(0);
+  let totalSent = BigInt(0);
+  let totalClaimed = BigInt(0);
+  let totalUnclaimed = BigInt(0);
+
+  for (const payment of payments) {
+    if (payment.type === 'sent') {
+      totalSent += payment.rawAmount;
+    } else {
+      totalReceived += payment.rawAmount;
+      if (payment.status === 'claimed') {
+        totalClaimed += payment.rawAmount;
+      } else {
+        totalUnclaimed += payment.rawAmount;
+      }
+    }
+  }
+
+  return {
+    totalTransactions: payments.length,
+    totalReceived: formatUnits(totalReceived, 6),
+    totalSent: formatUnits(totalSent, 6),
+    totalClaimed: formatUnits(totalClaimed, 6),
+    totalUnclaimed: formatUnits(totalUnclaimed, 6),
+  };
+}
+
 // ERC-4337 EntryPoint handleOps ABI
 // Selector 0x1fad948c = handleOps((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[],address)
 const ENTRYPOINT_HANDLEOPS_PARAMS = [
@@ -147,29 +186,87 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
       console.log('[SCAN] Starting payment scan...');
       console.log('[SCAN] Meta spending pub:', Bytes.bytesToHex(metaSpendingPub));
 
-      // Get current block and calculate scan range (last 99,000 blocks due to RPC limit of 100,000)
+      // Load cached payments from localStorage
+      let cachedPayments: StealthTransaction[] = [];
+      try {
+        const cached = localStorage.getItem(STORAGE_KEYS.CACHED_PAYMENTS);
+        if (cached) {
+          cachedPayments = JSON.parse(cached, (key, value) => {
+            if (key === 'rawAmount') return BigInt(value);
+            return value;
+          });
+          console.log('[SCAN] Loaded', cachedPayments.length, 'cached payments');
+        }
+      } catch (e) {
+        console.warn('[SCAN] Failed to load cached payments:', e);
+      }
+
+      // Get last scanned block or use deployment block
       const currentBlock = await publicClient.getBlockNumber();
-      const fromBlock = currentBlock > BigInt(99000) ? currentBlock - BigInt(99000) : BigInt(0);
+      let fromBlock = CONTRACT_DEPLOYMENT_BLOCK;
+      try {
+        const lastScanned = localStorage.getItem(STORAGE_KEYS.LAST_SCANNED_BLOCK);
+        if (lastScanned) {
+          fromBlock = BigInt(lastScanned) + BigInt(1);
+        }
+      } catch (e) {
+        console.warn('[SCAN] Failed to load last scanned block:', e);
+      }
+
+      // If already up to date, use cached payments
+      if (fromBlock > currentBlock) {
+        console.log('[SCAN] Already up to date, using cached payments');
+        const stats = calculateStats(cachedPayments);
+        setState({
+          transactions: cachedPayments.sort((a, b) => b.timestamp - a.timestamp),
+          loading: false,
+          scanning: false,
+          error: null,
+          keysLocked: false,
+          stats,
+        });
+        return;
+      }
 
       console.log('[SCAN] Scanning from block', fromBlock.toString(), 'to', currentBlock.toString());
 
-      // Fetch StealthPaymentSent events
-      const logs = await publicClient.getLogs({
-        address: contractAddress.NinahContractAddress as `0x${string}`,
-        event: {
-          type: 'event',
-          name: 'StealthPaymentSent',
-          inputs: [
-            { type: 'address', name: 'stealthAddress', indexed: true },
-            { type: 'address', name: 'sender', indexed: true },
-            { type: 'uint256', name: 'amount', indexed: false },
-            { type: 'bytes32', name: 'ephemeralPubkeyHash', indexed: false },
-          ],
-        },
-        fromBlock,
-        toBlock: 'latest',
-      });
+      // Fetch StealthPaymentSent events in chunks (10 blocks for Alchemy free tier)
+      const eventDef = {
+        type: 'event' as const,
+        name: 'StealthPaymentSent' as const,
+        inputs: [
+          { type: 'address', name: 'stealthAddress', indexed: true },
+          { type: 'address', name: 'sender', indexed: true },
+          { type: 'uint256', name: 'amount', indexed: false },
+          { type: 'bytes32', name: 'ephemeralPubkeyHash', indexed: false },
+        ],
+      };
 
+      type LogType = Awaited<ReturnType<typeof publicClient.getLogs<typeof eventDef>>>[number];
+      const allLogs: LogType[] = [];
+
+      for (let chunkStart = fromBlock; chunkStart <= currentBlock; chunkStart += CHUNK_SIZE) {
+        const chunkEnd =
+          chunkStart + CHUNK_SIZE - BigInt(1) > currentBlock ? currentBlock : chunkStart + CHUNK_SIZE - BigInt(1);
+
+        console.log('[SCAN] Chunk:', chunkStart.toString(), '-', chunkEnd.toString());
+
+        const chunkLogs = await publicClient.getLogs({
+          address: contractAddress.NinahContractAddress as `0x${string}`,
+          event: eventDef,
+          fromBlock: chunkStart,
+          toBlock: chunkEnd,
+        });
+
+        allLogs.push(...chunkLogs);
+
+        // Small delay to avoid rate limiting
+        if (chunkStart + CHUNK_SIZE <= currentBlock) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+
+      const logs = allLogs;
       console.log('[SCAN] Found', logs.length, 'StealthPaymentSent events');
 
       const myPayments: StealthTransaction[] = [];
@@ -177,12 +274,20 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
       // Process each event
       for (const log of logs) {
         try {
-          const senderAddress = (log.args.sender as string).toLowerCase();
+          // Extract args with proper typing
+          const args = log.args as {
+            stealthAddress: `0x${string}`;
+            sender: `0x${string}`;
+            amount: bigint;
+            ephemeralPubkeyHash: `0x${string}`;
+          };
+
+          const senderAddress = args.sender.toLowerCase();
           const currentWallet = walletAddress.toLowerCase();
 
           // Check if this is a SENT transaction (we are the sender)
           if (senderAddress === currentWallet) {
-            console.log('[SCAN] Found SENT payment from us:', log.args.stealthAddress);
+            console.log('[SCAN] Found SENT payment from us:', args.stealthAddress);
 
             // Get the block for timestamp
             const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
@@ -192,18 +297,18 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
               address: contractAddress.NinahContractAddress as `0x${string}`,
               abi: NinahABI,
               functionName: 'getStealthPayment',
-              args: [log.args.stealthAddress],
+              args: [args.stealthAddress],
             })) as { amount: bigint; claimed: boolean; sender: `0x${string}`; timestamp: bigint };
 
             myPayments.push({
               id: `${log.transactionHash}-${log.logIndex}-sent`,
               type: 'sent',
-              stealthAddress: log.args.stealthAddress as `0x${string}`,
-              amount: formatUnits(log.args.amount as bigint, 6),
-              rawAmount: log.args.amount as bigint,
+              stealthAddress: args.stealthAddress,
+              amount: formatUnits(args.amount, 6),
+              rawAmount: args.amount,
               timestamp: Number(block.timestamp),
               status: paymentData.claimed ? 'claimed' : 'completed',
-              sender: log.args.sender as `0x${string}`,
+              sender: args.sender,
               txHash: log.transactionHash,
               ephemeralPubkey: '0x' as `0x${string}`,
             });
@@ -361,27 +466,32 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
           const ephemeralPubkey = Bytes.hexToBytes(ephemeralPubkeyHex);
 
           console.log('[SCAN] Checking payment:', {
-            stealthAddress: log.args.stealthAddress,
+            stealthAddress: args.stealthAddress,
             ephemeralPubkeyHex: ephemeralPubkeyHex,
             ephemeralPubkeyLength: ephemeralPubkey.length,
           });
 
           // Convert stealth address to bytes (remove 0x, it's 20 bytes)
-          const stealthAddressBytes = Bytes.hexToBytes(log.args.stealthAddress as `0x${string}`);
+          const stealthAddressBytes = Bytes.hexToBytes(args.stealthAddress);
 
           console.log('[SCAN] Stealth address bytes length:', stealthAddressBytes.length);
 
           // Check if this payment is for us
-          const result = Address.checkStealthPayment(ephemeralPubkey, metaViewingPriv, metaSpendingPub, stealthAddressBytes);
+          const result = Address.checkStealthPayment(
+            ephemeralPubkey,
+            metaViewingPriv,
+            metaSpendingPub,
+            stealthAddressBytes,
+          );
 
           console.log('[SCAN] Check result:', {
             isForMe: result.isForMe,
             derivedAddress: result.derivedAddress ? Bytes.bytesToHex(result.derivedAddress) : 'none',
-            expectedAddress: log.args.stealthAddress,
+            expectedAddress: args.stealthAddress,
           });
 
           if (result.isForMe) {
-            console.log('[SCAN] Found payment for me!', log.args.stealthAddress);
+            console.log('[SCAN] Found payment for me!', args.stealthAddress);
 
             // Get the block for timestamp
             const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
@@ -391,18 +501,18 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
               address: contractAddress.NinahContractAddress as `0x${string}`,
               abi: NinahABI,
               functionName: 'getStealthPayment',
-              args: [log.args.stealthAddress],
+              args: [args.stealthAddress],
             })) as { amount: bigint; claimed: boolean; sender: `0x${string}`; timestamp: bigint };
 
             myPayments.push({
               id: `${log.transactionHash}-${log.logIndex}`,
               type: 'received',
-              stealthAddress: log.args.stealthAddress as `0x${string}`,
-              amount: formatUnits(log.args.amount as bigint, 6), // IDRX has 6 decimals
-              rawAmount: log.args.amount as bigint,
+              stealthAddress: args.stealthAddress,
+              amount: formatUnits(args.amount, 6), // IDRX has 6 decimals
+              rawAmount: args.amount,
               timestamp: Number(block.timestamp),
               status: paymentData.claimed ? 'claimed' : 'completed',
-              sender: log.args.sender as `0x${string}`,
+              sender: args.sender,
               txHash: log.transactionHash,
               ephemeralPubkey: ephemeralPubkeyHex,
             });
@@ -413,40 +523,34 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
         }
       }
 
-      console.log('[SCAN] Found', myPayments.length, 'payments for me');
+      console.log('[SCAN] Found', myPayments.length, 'new payments for me');
 
-      // Calculate stats
-      let totalReceived = BigInt(0);
-      let totalSent = BigInt(0);
-      let totalClaimed = BigInt(0);
-      let totalUnclaimed = BigInt(0);
+      // Merge with cached payments (avoid duplicates by id)
+      const existingIds = new Set(cachedPayments.map((p) => p.id));
+      const newPayments = myPayments.filter((p) => !existingIds.has(p.id));
+      const allPayments = [...cachedPayments, ...newPayments];
 
-      for (const payment of myPayments) {
-        if (payment.type === 'sent') {
-          totalSent += payment.rawAmount;
-        } else {
-          totalReceived += payment.rawAmount;
-          if (payment.status === 'claimed') {
-            totalClaimed += payment.rawAmount;
-          } else {
-            totalUnclaimed += payment.rawAmount;
-          }
-        }
+      console.log('[SCAN] Total payments after merge:', allPayments.length);
+
+      // Save to localStorage
+      try {
+        localStorage.setItem(STORAGE_KEYS.LAST_SCANNED_BLOCK, currentBlock.toString());
+        localStorage.setItem(
+          STORAGE_KEYS.CACHED_PAYMENTS,
+          JSON.stringify(allPayments, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
+        );
+        console.log('[SCAN] Saved to localStorage, last block:', currentBlock.toString());
+      } catch (e) {
+        console.warn('[SCAN] Failed to save to localStorage:', e);
       }
 
       setState({
-        transactions: myPayments.sort((a, b) => b.timestamp - a.timestamp),
+        transactions: allPayments.sort((a, b) => b.timestamp - a.timestamp),
         loading: false,
         scanning: false,
         error: null,
         keysLocked: false,
-        stats: {
-          totalTransactions: myPayments.length,
-          totalReceived: formatUnits(totalReceived, 6),
-          totalSent: formatUnits(totalSent, 6),
-          totalClaimed: formatUnits(totalClaimed, 6),
-          totalUnclaimed: formatUnits(totalUnclaimed, 6),
-        },
+        stats: calculateStats(allPayments),
       });
     } catch (error) {
       console.error('[SCAN] Error scanning payments:', error);
