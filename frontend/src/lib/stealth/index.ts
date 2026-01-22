@@ -87,6 +87,10 @@
 // Stealth address utilities
 export { Address } from '@/lib/stealth/address';
 
+// Stealth wallet (for Option 2 - stealth address as EOA)
+export { createStealthWallet, verifyStealthAddress } from '@/lib/stealth/wallet';
+export type { StealthWallet } from '@/lib/stealth/wallet';
+
 // Types
 export type {
   StealthPayment,
