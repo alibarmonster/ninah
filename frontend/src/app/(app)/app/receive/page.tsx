@@ -12,11 +12,14 @@ import {
   IconLock,
   IconArrowDownLeft,
   IconExternalLink,
+  IconWallet,
+  IconLoader2,
 } from '@tabler/icons-react';
-import { useMetaKeys, useUsername, useStealthPayments } from '@/hooks';
+import { useMetaKeys, useUsername, useStealthPayments, useStealthClaim, type StealthPaymentToClaim } from '@/hooks';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { getUsernameHash } from '@/lib/contracts/NinjaRupiah';
-import { keccak256, toBytes } from 'viem';
+import { keccak256, toBytes, parseUnits } from 'viem';
+import { keyManager } from '@/lib/keys';
 
 export default function ReceivePage() {
   const { client: smartWalletClient } = useSmartWallets();
@@ -53,7 +56,12 @@ export default function ReceivePage() {
   // Filter to only show received payments on this page
   const transactions = allTransactions.filter((tx) => tx.type === 'received');
 
+  // Stealth claim hook
+  const { claimPayment, verifyPayment, status: claimStatus, error: claimError, result: claimResult, reset: resetClaim } = useStealthClaim();
+
   const [copiedType, setCopiedType] = useState<'stealth' | 'username' | 'wallet' | null>(null);
+  const [claimingPaymentId, setClaimingPaymentId] = useState<string | null>(null);
+  const [claimDestination, setClaimDestination] = useState<string>('');
 
   // Username recovery state
   const [recoveryUsername, setRecoveryUsername] = useState('');
@@ -92,6 +100,60 @@ export default function ReceivePage() {
       setRecoveryError('Failed to verify username');
     } finally {
       setRecoveryLoading(false);
+    }
+  };
+
+  // Handle claiming a stealth payment
+  const handleClaimPayment = async (payment: {
+    id: string;
+    stealthAddress: `0x${string}`;
+    ephemeralPubkey: `0x${string}`;
+    rawAmount: bigint;
+    sender: `0x${string}`;
+    timestamp: number;
+  }) => {
+    if (!walletAddress || !keyManager.isUnlocked()) {
+      return;
+    }
+
+    setClaimingPaymentId(payment.id);
+    resetClaim();
+
+    try {
+      // Get the destination address (use main wallet if not specified)
+      const destination = claimDestination.trim() || walletAddress;
+
+      if (!destination.startsWith('0x') || destination.length !== 42) {
+        throw new Error('Invalid destination address');
+      }
+
+      // Get private keys from keyManager
+      const keys = keyManager.getKeys();
+
+      // Prepare payment data for claim
+      const paymentToClaim: StealthPaymentToClaim = {
+        stealthAddress: payment.stealthAddress,
+        ephemeralPubkey: payment.ephemeralPubkey,
+        amount: payment.rawAmount,
+        sender: payment.sender,
+        timestamp: payment.timestamp,
+      };
+
+      // Attempt to claim using gasless permit flow
+      await claimPayment(
+        paymentToClaim,
+        keys.metaViewingPriv,
+        keys.metaSpendingPriv,
+        destination as `0x${string}`,
+        smartWalletClient // Pass smart wallet for gasless claiming via paymaster
+      );
+
+      // Refresh payments list on success
+      if (scanPayments) {
+        scanPayments();
+      }
+    } catch (error) {
+      console.error('[CLAIM] Error:', error);
     }
   };
 
@@ -407,50 +469,108 @@ export default function ReceivePage() {
           {/* Payments List */}
           {!paymentsLoading && !keysLocked && transactions.length > 0 && (
             <div className='space-y-3'>
-              {transactions.map((payment) => (
-                <div
-                  key={payment.id}
-                  className='bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors'>
-                  <div className='flex items-center justify-between'>
-                    <div className='flex items-center gap-3'>
-                      <div className='h-10 w-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center'>
-                        <IconArrowDownLeft className='h-5 w-5 text-green-600 dark:text-green-400' />
+              {transactions.map((payment) => {
+                const isClaimingThis = claimingPaymentId === payment.id;
+                const isClaimInProgress = isClaimingThis && (claimStatus === 'deriving' || claimStatus === 'checking' || claimStatus === 'signing' || claimStatus === 'transferring');
+                const isClaimSuccess = isClaimingThis && claimStatus === 'success';
+                const isClaimError = isClaimingThis && claimStatus === 'error';
+
+                return (
+                  <div
+                    key={payment.id}
+                    className='bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors'>
+                    <div className='flex items-center justify-between'>
+                      <div className='flex items-center gap-3'>
+                        <div className='h-10 w-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center'>
+                          <IconArrowDownLeft className='h-5 w-5 text-green-600 dark:text-green-400' />
+                        </div>
+                        <div>
+                          <p className='text-sm font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>
+                            Received from Someone
+                          </p>
+                          <p className='text-xs text-neutral-600 dark:text-neutral-400 font-poppins'>
+                            {formatDate(payment.timestamp)} • Stealth: {truncateAddress(payment.stealthAddress)}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className='text-sm font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>
-                          Received from Someone
-                        </p>
-                        <p className='text-xs text-neutral-600 dark:text-neutral-400 font-poppins'>
-                          {formatDate(payment.timestamp)} • Stealth: {truncateAddress(payment.stealthAddress)}
-                        </p>
+                      <div className='text-right flex items-center gap-3'>
+                        <div>
+                          <p className='text-lg font-bold text-green-600 dark:text-green-400 font-grotesk'>
+                            +{formatIDRBalance(payment.amount)}
+                          </p>
+                          <div className='flex items-center gap-2 justify-end'>
+                            {payment.status === 'claimed' || isClaimSuccess ? (
+                              <span className='text-xs px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400 rounded-full font-poppins'>
+                                Claimed
+                              </span>
+                            ) : (
+                              <span className='text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-poppins'>
+                                Ready
+                              </span>
+                            )}
+                            <a
+                              href={`https://sepolia.basescan.org/tx/${payment.txHash}`}
+                              target='_blank'
+                              rel='noopener noreferrer'
+                              className='text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'>
+                              <IconExternalLink className='h-4 w-4' />
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* Claim Button */}
+                        {payment.status !== 'claimed' && !isClaimSuccess && (
+                          <Button
+                            size='sm'
+                            onClick={() => handleClaimPayment(payment)}
+                            disabled={isClaimInProgress}
+                            className='font-poppins'>
+                            {isClaimInProgress ? (
+                              <>
+                                <IconLoader2 className='h-4 w-4 mr-1 animate-spin' />
+                                {claimStatus === 'deriving' && 'Deriving...'}
+                                {claimStatus === 'checking' && 'Checking...'}
+                                {claimStatus === 'transferring' && 'Transferring...'}
+                              </>
+                            ) : (
+                              <>
+                                <IconWallet className='h-4 w-4 mr-1' />
+                                Claim
+                              </>
+                            )}
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className='text-right'>
-                      <p className='text-lg font-bold text-green-600 dark:text-green-400 font-grotesk'>
-                        +{formatIDRBalance(payment.amount)}
-                      </p>
-                      <div className='flex items-center gap-2'>
-                        {payment.status === 'claimed' ? (
-                          <span className='text-xs px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400 rounded-full font-poppins'>
-                            Claimed
+
+                    {/* Claim Error */}
+                    {isClaimError && claimError && (
+                      <div className='mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
+                        <p className='text-xs text-red-700 dark:text-red-400 font-poppins'>{claimError}</p>
+                      </div>
+                    )}
+
+                    {/* Claim Success */}
+                    {isClaimSuccess && claimResult && (
+                      <div className='mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg'>
+                        <div className='flex items-center gap-2 text-green-700 dark:text-green-400'>
+                          <IconCheck className='h-4 w-4' />
+                          <span className='text-xs font-poppins'>
+                            Claimed {claimResult.amount} IDRX to {truncateAddress(claimResult.toAddress)}
                           </span>
-                        ) : (
-                          <span className='text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-poppins'>
-                            Ready to Claim
-                          </span>
-                        )}
+                        </div>
                         <a
-                          href={`https://sepolia.basescan.org/tx/${payment.txHash}`}
+                          href={`https://sepolia.basescan.org/tx/${claimResult.txHash}`}
                           target='_blank'
                           rel='noopener noreferrer'
-                          className='text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'>
-                          <IconExternalLink className='h-4 w-4' />
+                          className='text-xs text-green-600 dark:text-green-500 hover:underline font-mono mt-1 inline-block'>
+                          View Transaction
                         </a>
                       </div>
-                    </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
