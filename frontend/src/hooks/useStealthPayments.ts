@@ -11,11 +11,11 @@ import { Bytes } from '@/lib/helpers/bytes';
 const CONTRACT_DEPLOYMENT_BLOCK = BigInt(36503234);
 const CHUNK_SIZE = BigInt(10000); // Base Sepolia RPC supports up to 100k blocks
 
-// localStorage keys
-const STORAGE_KEYS = {
-  LAST_SCANNED_BLOCK: 'ninah_last_scanned_block',
-  CACHED_PAYMENTS: 'ninah_cached_payments',
-};
+// localStorage keys - now include wallet address to prevent cross-account contamination
+const getStorageKeys = (walletAddress: string) => ({
+  LAST_SCANNED_BLOCK: `ninah_last_scanned_block_${walletAddress.toLowerCase()}`,
+  CACHED_PAYMENTS: `ninah_cached_payments_${walletAddress.toLowerCase()}`,
+});
 
 // Helper to calculate stats
 function calculateStats(payments: { type: string; rawAmount: bigint; status: string }[]) {
@@ -183,10 +183,24 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
       const metaViewingPriv = keys.metaViewingPriv;
       const metaSpendingPub = keys.metaSpendingPub;
 
+      // Get wallet-specific storage keys
+      const STORAGE_KEYS = getStorageKeys(walletAddress);
+
+      // Clean up legacy global cache keys (one-time migration)
+      try {
+        if (localStorage.getItem('ninah_cached_payments')) {
+          localStorage.removeItem('ninah_cached_payments');
+          localStorage.removeItem('ninah_last_scanned_block');
+          console.log('[SCAN] Cleaned up legacy global cache keys');
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+
       console.log('[SCAN] Starting payment scan...');
       console.log('[SCAN] Meta spending pub:', Bytes.bytesToHex(metaSpendingPub));
 
-      // Load cached payments from localStorage
+      // Load cached payments from localStorage (wallet-specific)
       let cachedPayments: StealthTransaction[] = [];
       try {
         const cached = localStorage.getItem(STORAGE_KEYS.CACHED_PAYMENTS);
@@ -195,13 +209,13 @@ export function useStealthPayments(walletAddress: `0x${string}` | undefined) {
             if (key === 'rawAmount') return BigInt(value);
             return value;
           });
-          console.log('[SCAN] Loaded', cachedPayments.length, 'cached payments');
+          console.log('[SCAN] Loaded', cachedPayments.length, 'cached payments for wallet', walletAddress.slice(0, 10));
         }
       } catch (e) {
         console.warn('[SCAN] Failed to load cached payments:', e);
       }
 
-      // Get last scanned block or use deployment block
+      // Get last scanned block or use deployment block (wallet-specific)
       const currentBlock = await publicClient.getBlockNumber();
       let fromBlock = CONTRACT_DEPLOYMENT_BLOCK;
       try {
