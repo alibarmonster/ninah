@@ -4,7 +4,8 @@ import React, { useState, useCallback } from 'react';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { IconUser, IconCoins, IconSend, IconLoader2, IconCheck, IconAlertCircle } from '@tabler/icons-react';
+import { IconUser, IconCoins, IconSend, IconLoader2 } from '@tabler/icons-react';
+import { TransactionStatus } from '@/components/ui/transactionStatus';
 import { useWalletBalance } from '@/hooks';
 import { getMetaKeys } from '@/lib/contracts/NinjaRupiah';
 import { Address } from '@/lib/stealth';
@@ -90,9 +91,8 @@ export default function SendPage() {
         const allLogs: LogType[] = [];
 
         for (let chunkStart = CONTRACT_DEPLOYMENT_BLOCK; chunkStart <= currentBlock; chunkStart += CHUNK_SIZE) {
-          const chunkEnd = chunkStart + CHUNK_SIZE - BigInt(1) > currentBlock
-            ? currentBlock
-            : chunkStart + CHUNK_SIZE - BigInt(1);
+          const chunkEnd =
+            chunkStart + CHUNK_SIZE - BigInt(1) > currentBlock ? currentBlock : chunkStart + CHUNK_SIZE - BigInt(1);
 
           const chunkLogs = await publicClient.getLogs({
             address: ninahContract,
@@ -122,7 +122,12 @@ export default function SendPage() {
 
         // Get the most recent registration (in case of multiple)
         const latestLog = logs[logs.length - 1];
-        recipientAddress = latestLog.args.user as `0x${string}`;
+        const logArgs = latestLog.args as {
+          usernameHash: `0x${string}`;
+          user: `0x${string}`;
+          commitment: `0x${string}`;
+        };
+        recipientAddress = logArgs.user;
         console.log('[SEND] Resolved address:', recipientAddress);
       }
 
@@ -297,24 +302,17 @@ export default function SendPage() {
 
               {/* Status Messages */}
               {sendStatus === 'success' && (
-                <div className='mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg'>
-                  <div className='flex items-center gap-2 text-green-700 dark:text-green-400'>
-                    <IconCheck className='h-5 w-5' />
-                    <span className='font-medium font-poppins'>Payment sent successfully!</span>
-                  </div>
-                  {txHash && (
-                    <p className='mt-2 text-xs text-green-600 dark:text-green-500 font-mono break-all'>Tx: {txHash}</p>
-                  )}
-                </div>
+                <TransactionStatus
+                  variant='success'
+                  title='Payment Delivered'
+                  message={`${amount} IDRX sent to ${recipient}`}
+                  txHash={txHash || undefined}
+                  className='mb-4'
+                />
               )}
 
               {sendStatus === 'error' && sendError && (
-                <div className='mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
-                  <div className='flex items-center gap-2 text-red-700 dark:text-red-400'>
-                    <IconAlertCircle className='h-5 w-5' />
-                    <span className='font-medium font-poppins'>{sendError}</span>
-                  </div>
-                </div>
+                <TransactionStatus variant='error' title='Transfer Failed' message={sendError} className='mb-4' />
               )}
 
               {/* Send Button */}
