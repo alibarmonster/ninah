@@ -15,10 +15,11 @@ import {
   IconWallet,
   IconLoader2,
 } from '@tabler/icons-react';
+import { TransactionStatusInline } from '@/components/ui/transactionStatus';
 import { useMetaKeys, useUsername, useStealthPayments, useStealthClaim, type StealthPaymentToClaim } from '@/hooks';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { getUsernameHash } from '@/lib/contracts/NinjaRupiah';
-import { keccak256, toBytes, parseUnits } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import { keyManager } from '@/lib/keys';
 
 export default function ReceivePage() {
@@ -30,11 +31,8 @@ export default function ReceivePage() {
   // Track if wallet is still initializing
   const isWalletLoading = !smartWalletClient || !walletAddress;
 
-  // Fetch meta keys and generate stealth address
-  const { stealthAddress, loading: keysLoading, hasKeys } = useMetaKeys(walletAddress);
-
-  // Combined loading state - true if wallet is loading OR keys are loading
-  const isKeysLoading = isWalletLoading || keysLoading;
+  // Fetch meta keys
+  useMetaKeys(walletAddress);
 
   // Fetch username from localStorage and verify with blockchain
   const { username, loading: usernameLoading, hasUsername, refetch: refetchUsername } = useUsername(walletAddress);
@@ -57,11 +55,16 @@ export default function ReceivePage() {
   const transactions = allTransactions.filter((tx) => tx.type === 'received');
 
   // Stealth claim hook
-  const { claimPayment, verifyPayment, status: claimStatus, error: claimError, result: claimResult, reset: resetClaim } = useStealthClaim();
+  const {
+    claimPayment,
+    status: claimStatus,
+    error: claimError,
+    result: claimResult,
+    reset: resetClaim,
+  } = useStealthClaim();
 
   const [copiedType, setCopiedType] = useState<'stealth' | 'username' | 'wallet' | null>(null);
   const [claimingPaymentId, setClaimingPaymentId] = useState<string | null>(null);
-  const [claimDestination, setClaimDestination] = useState<string>('');
 
   // Username recovery state
   const [recoveryUsername, setRecoveryUsername] = useState('');
@@ -120,13 +123,6 @@ export default function ReceivePage() {
     resetClaim();
 
     try {
-      // Get the destination address (use main wallet if not specified)
-      const destination = claimDestination.trim() || walletAddress;
-
-      if (!destination.startsWith('0x') || destination.length !== 42) {
-        throw new Error('Invalid destination address');
-      }
-
       // Get private keys from keyManager
       const keys = keyManager.getKeys();
 
@@ -144,8 +140,8 @@ export default function ReceivePage() {
         paymentToClaim,
         keys.metaViewingPriv,
         keys.metaSpendingPriv,
-        destination as `0x${string}`,
-        smartWalletClient // Pass smart wallet for gasless claiming via paymaster
+        walletAddress,
+        smartWalletClient, // Pass smart wallet for gasless claiming via paymaster
       );
 
       // Refresh payments list on success
@@ -388,31 +384,35 @@ export default function ReceivePage() {
 
           {/* Keys Locked Warning */}
           {keysLocked && (
-            <div className='bg-amber-50 dark:bg-amber-900/20 p-6 rounded-lg mb-6 border border-amber-200 dark:border-amber-800'>
-              <div className='flex items-start gap-3'>
-                <IconLock className='h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5' />
+            <div className='mb-6 overflow-hidden rounded-lg border border-amber-500/20 bg-gradient-to-r from-amber-950/60 to-neutral-900/80 backdrop-blur-sm'>
+              <div className='flex items-start gap-3 p-5'>
+                <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/20'>
+                  <IconLock className='h-4 w-4 text-amber-400' />
+                </div>
                 <div>
-                  <p className='text-sm font-medium text-amber-800 dark:text-amber-200 mb-1 font-poppins'>
-                    Keys Locked
-                  </p>
-                  <p className='text-xs text-amber-700 dark:text-amber-300 font-poppins'>
+                  <p className='font-poppins text-sm font-semibold text-amber-200'>Keys Locked</p>
+                  <p className='mt-1 font-poppins text-xs text-neutral-400'>
                     Your keys are locked. Please unlock them in your wallet settings to scan for incoming payments.
                   </p>
                 </div>
               </div>
+              <div className='h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent' />
             </div>
           )}
 
           {/* Error State */}
           {paymentsError && (
-            <div className='bg-red-50 dark:bg-red-900/20 p-6 rounded-lg mb-6 border border-red-200 dark:border-red-800'>
-              <div className='flex items-start gap-3'>
-                <IconAlertCircle className='h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5' />
+            <div className='mb-6 overflow-hidden rounded-lg border border-rose-500/20 bg-gradient-to-r from-rose-950/60 to-neutral-900/80 backdrop-blur-sm'>
+              <div className='flex items-start gap-3 p-5'>
+                <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-rose-500/20'>
+                  <IconAlertCircle className='h-4 w-4 text-rose-400' />
+                </div>
                 <div>
-                  <p className='text-sm font-medium text-red-800 dark:text-red-200 mb-1 font-poppins'>Scan Error</p>
-                  <p className='text-xs text-red-700 dark:text-red-300 font-poppins'>{paymentsError.message}</p>
+                  <p className='font-poppins text-sm font-semibold text-rose-200'>Scan Error</p>
+                  <p className='mt-1 font-poppins text-xs text-neutral-400'>{paymentsError.message}</p>
                 </div>
               </div>
+              <div className='h-px bg-gradient-to-r from-transparent via-rose-500/30 to-transparent' />
             </div>
           )}
 
@@ -471,7 +471,12 @@ export default function ReceivePage() {
             <div className='space-y-3'>
               {transactions.map((payment) => {
                 const isClaimingThis = claimingPaymentId === payment.id;
-                const isClaimInProgress = isClaimingThis && (claimStatus === 'deriving' || claimStatus === 'checking' || claimStatus === 'signing' || claimStatus === 'transferring');
+                const isClaimInProgress =
+                  isClaimingThis &&
+                  (claimStatus === 'deriving' ||
+                    claimStatus === 'checking' ||
+                    claimStatus === 'signing' ||
+                    claimStatus === 'transferring');
                 const isClaimSuccess = isClaimingThis && claimStatus === 'success';
                 const isClaimError = isClaimingThis && claimStatus === 'error';
 
@@ -544,29 +549,15 @@ export default function ReceivePage() {
                     </div>
 
                     {/* Claim Error */}
-                    {isClaimError && claimError && (
-                      <div className='mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
-                        <p className='text-xs text-red-700 dark:text-red-400 font-poppins'>{claimError}</p>
-                      </div>
-                    )}
+                    {isClaimError && claimError && <TransactionStatusInline variant='error' message={claimError} />}
 
                     {/* Claim Success */}
                     {isClaimSuccess && claimResult && (
-                      <div className='mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg'>
-                        <div className='flex items-center gap-2 text-green-700 dark:text-green-400'>
-                          <IconCheck className='h-4 w-4' />
-                          <span className='text-xs font-poppins'>
-                            Claimed {claimResult.amount} IDRX to {truncateAddress(claimResult.toAddress)}
-                          </span>
-                        </div>
-                        <a
-                          href={`https://sepolia.basescan.org/tx/${claimResult.txHash}`}
-                          target='_blank'
-                          rel='noopener noreferrer'
-                          className='text-xs text-green-600 dark:text-green-500 hover:underline font-mono mt-1 inline-block'>
-                          View Transaction
-                        </a>
-                      </div>
+                      <TransactionStatusInline
+                        variant='success'
+                        message={`Claimed ${claimResult.amount} IDRX to ${truncateAddress(claimResult.toAddress)}`}
+                        txHash={claimResult.txHash}
+                      />
                     )}
                   </div>
                 );
