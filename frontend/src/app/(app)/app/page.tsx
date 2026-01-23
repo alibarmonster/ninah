@@ -12,11 +12,12 @@ import {
   IconSend,
   IconChevronLeft,
   IconChevronRight,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useWalletBalance, useStealthPayments } from '@/hooks';
 
-// localStorage key for stats history
-const STATS_HISTORY_KEY = 'ninah_stats_history';
+// localStorage key for stats history - wallet specific
+const getStatsHistoryKey = (walletAddress: string) => `ninah_stats_history_${walletAddress.toLowerCase()}`;
 
 interface StatsSnapshot {
   balance: string;
@@ -56,21 +57,34 @@ export default function DashboardPage() {
   // State for previous stats (for percentage calculation)
   const [previousStats, setPreviousStats] = useState<StatsSnapshot | null>(null);
 
-  // Load previous stats from localStorage on mount
+  // Load previous stats from localStorage on mount (wallet-specific)
   useEffect(() => {
+    if (!walletAddress) {
+      setPreviousStats(null);
+      return;
+    }
+
     try {
-      const stored = localStorage.getItem(STATS_HISTORY_KEY);
+      // Clean up legacy global key
+      if (localStorage.getItem('ninah_stats_history')) {
+        localStorage.removeItem('ninah_stats_history');
+      }
+
+      const stored = localStorage.getItem(getStatsHistoryKey(walletAddress));
       if (stored) {
         setPreviousStats(JSON.parse(stored));
+      } else {
+        setPreviousStats(null);
       }
     } catch (e) {
       console.warn('Failed to load stats history:', e);
+      setPreviousStats(null);
     }
-  }, []);
+  }, [walletAddress]);
 
   // Save current stats to localStorage when data loads (once per session)
   const saveStatsSnapshot = useCallback(() => {
-    if (balanceLoading || paymentsLoading || !balance) return;
+    if (!walletAddress || balanceLoading || paymentsLoading || !balance) return;
 
     const currentSnapshot: StatsSnapshot = {
       balance: balance || '0',
@@ -86,12 +100,12 @@ export default function DashboardPage() {
 
     if (shouldSave) {
       try {
-        localStorage.setItem(STATS_HISTORY_KEY, JSON.stringify(currentSnapshot));
+        localStorage.setItem(getStatsHistoryKey(walletAddress), JSON.stringify(currentSnapshot));
       } catch (e) {
         console.warn('Failed to save stats history:', e);
       }
     }
-  }, [balance, balanceLoading, paymentsLoading, stats, previousStats]);
+  }, [walletAddress, balance, balanceLoading, paymentsLoading, stats, previousStats]);
 
   useEffect(() => {
     saveStatsSnapshot();
@@ -188,15 +202,29 @@ export default function DashboardPage() {
 
         {/* Error States */}
         {balanceError && (
-          <div className='mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
-            <p className='text-red-600 dark:text-red-400 font-poppins'>Error loading balance: {balanceError.message}</p>
+          <div className='mb-6 overflow-hidden rounded-lg border border-amber-500/20 bg-gradient-to-r from-amber-950/60 to-neutral-900/80 backdrop-blur-sm'>
+            <div className='flex items-center gap-3 p-4'>
+              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20'>
+                <IconAlertTriangle className='h-4 w-4 text-amber-400' />
+              </div>
+              <div>
+                <p className='font-poppins text-sm font-medium text-amber-200'>Balance Unavailable</p>
+                <p className='font-poppins text-xs text-neutral-400'>{balanceError.message}</p>
+              </div>
+            </div>
           </div>
         )}
         {paymentsError && (
-          <div className='mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
-            <p className='text-red-600 dark:text-red-400 font-poppins'>
-              Error loading transactions: {paymentsError.message}
-            </p>
+          <div className='mb-6 overflow-hidden rounded-lg border border-amber-500/20 bg-gradient-to-r from-amber-950/60 to-neutral-900/80 backdrop-blur-sm'>
+            <div className='flex items-center gap-3 p-4'>
+              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20'>
+                <IconAlertTriangle className='h-4 w-4 text-amber-400' />
+              </div>
+              <div>
+                <p className='font-poppins text-sm font-medium text-amber-200'>Transaction History Unavailable</p>
+                <p className='font-poppins text-xs text-neutral-400'>{paymentsError.message}</p>
+              </div>
+            </div>
           </div>
         )}
 
