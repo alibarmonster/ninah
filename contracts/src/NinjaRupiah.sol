@@ -162,7 +162,8 @@ contract MockNinjaRupiah is ReentrancyGuard, Ownable {
             revert PaymentAlreadyExists();
         }
 
-        bool success = idrx.transferFrom(msg.sender, address(this), amount);
+        // Transfer tokens directly to stealth address
+        bool success = idrx.transferFrom(msg.sender, stealthAddress, amount);
         if (!success) revert TransferFailed();
 
         bytes32 ephemeralPubkeyHash = keccak256(ephemeralPubkey);
