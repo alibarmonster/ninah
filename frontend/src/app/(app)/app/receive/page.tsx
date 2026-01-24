@@ -12,11 +12,15 @@ import {
   IconLock,
   IconArrowDownLeft,
   IconExternalLink,
+  IconWallet,
+  IconLoader2,
 } from '@tabler/icons-react';
-import { useMetaKeys, useUsername, useStealthPayments } from '@/hooks';
+import { TransactionStatusInline } from '@/components/ui/transactionStatus';
+import { useMetaKeys, useUsername, useStealthPayments, useStealthClaim, type StealthPaymentToClaim } from '@/hooks';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { getUsernameHash } from '@/lib/contracts/NinjaRupiah';
 import { keccak256, toBytes } from 'viem';
+import { keyManager } from '@/lib/keys';
 
 export default function ReceivePage() {
   const { client: smartWalletClient } = useSmartWallets();
@@ -27,11 +31,8 @@ export default function ReceivePage() {
   // Track if wallet is still initializing
   const isWalletLoading = !smartWalletClient || !walletAddress;
 
-  // Fetch meta keys and generate stealth address
-  const { stealthAddress, loading: keysLoading, hasKeys } = useMetaKeys(walletAddress);
-
-  // Combined loading state - true if wallet is loading OR keys are loading
-  const isKeysLoading = isWalletLoading || keysLoading;
+  // Fetch meta keys
+  useMetaKeys(walletAddress);
 
   // Fetch username from localStorage and verify with blockchain
   const { username, loading: usernameLoading, hasUsername, refetch: refetchUsername } = useUsername(walletAddress);
@@ -53,7 +54,17 @@ export default function ReceivePage() {
   // Filter to only show received payments on this page
   const transactions = allTransactions.filter((tx) => tx.type === 'received');
 
+  // Stealth claim hook
+  const {
+    claimPayment,
+    status: claimStatus,
+    error: claimError,
+    result: claimResult,
+    reset: resetClaim,
+  } = useStealthClaim();
+
   const [copiedType, setCopiedType] = useState<'stealth' | 'username' | 'wallet' | null>(null);
+  const [claimingPaymentId, setClaimingPaymentId] = useState<string | null>(null);
 
   // Username recovery state
   const [recoveryUsername, setRecoveryUsername] = useState('');
@@ -92,6 +103,53 @@ export default function ReceivePage() {
       setRecoveryError('Failed to verify username');
     } finally {
       setRecoveryLoading(false);
+    }
+  };
+
+  // Handle claiming a stealth payment
+  const handleClaimPayment = async (payment: {
+    id: string;
+    stealthAddress: `0x${string}`;
+    ephemeralPubkey: `0x${string}`;
+    rawAmount: bigint;
+    sender: `0x${string}`;
+    timestamp: number;
+  }) => {
+    if (!walletAddress || !keyManager.isUnlocked()) {
+      return;
+    }
+
+    setClaimingPaymentId(payment.id);
+    resetClaim();
+
+    try {
+      // Get private keys from keyManager
+      const keys = keyManager.getKeys();
+
+      // Prepare payment data for claim
+      const paymentToClaim: StealthPaymentToClaim = {
+        stealthAddress: payment.stealthAddress,
+        ephemeralPubkey: payment.ephemeralPubkey,
+        amount: payment.rawAmount,
+        sender: payment.sender,
+        timestamp: payment.timestamp,
+      };
+
+      // Attempt to claim using gasless permit flow
+      await claimPayment(
+        paymentToClaim,
+        keys.metaViewingPriv,
+        keys.metaSpendingPriv,
+        walletAddress,
+        smartWalletClient, // Pass smart wallet for gasless claiming via paymaster
+      );
+
+      // Refresh payments list on success
+      if (scanPayments) {
+        scanPayments();
+      }
+    } catch (error) {
+      console.error('[CLAIM] Error:', error);
     }
   };
 
@@ -326,31 +384,35 @@ export default function ReceivePage() {
 
           {/* Keys Locked Warning */}
           {keysLocked && (
-            <div className='bg-amber-50 dark:bg-amber-900/20 p-6 rounded-lg mb-6 border border-amber-200 dark:border-amber-800'>
-              <div className='flex items-start gap-3'>
-                <IconLock className='h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5' />
+            <div className='mb-6 overflow-hidden rounded-lg border border-amber-500/20 bg-gradient-to-r from-amber-950/60 to-neutral-900/80 backdrop-blur-sm'>
+              <div className='flex items-start gap-3 p-5'>
+                <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/20'>
+                  <IconLock className='h-4 w-4 text-amber-400' />
+                </div>
                 <div>
-                  <p className='text-sm font-medium text-amber-800 dark:text-amber-200 mb-1 font-poppins'>
-                    Keys Locked
-                  </p>
-                  <p className='text-xs text-amber-700 dark:text-amber-300 font-poppins'>
+                  <p className='font-poppins text-sm font-semibold text-amber-200'>Keys Locked</p>
+                  <p className='mt-1 font-poppins text-xs text-neutral-400'>
                     Your keys are locked. Please unlock them in your wallet settings to scan for incoming payments.
                   </p>
                 </div>
               </div>
+              <div className='h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent' />
             </div>
           )}
 
           {/* Error State */}
           {paymentsError && (
-            <div className='bg-red-50 dark:bg-red-900/20 p-6 rounded-lg mb-6 border border-red-200 dark:border-red-800'>
-              <div className='flex items-start gap-3'>
-                <IconAlertCircle className='h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5' />
+            <div className='mb-6 overflow-hidden rounded-lg border border-rose-500/20 bg-gradient-to-r from-rose-950/60 to-neutral-900/80 backdrop-blur-sm'>
+              <div className='flex items-start gap-3 p-5'>
+                <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-rose-500/20'>
+                  <IconAlertCircle className='h-4 w-4 text-rose-400' />
+                </div>
                 <div>
-                  <p className='text-sm font-medium text-red-800 dark:text-red-200 mb-1 font-poppins'>Scan Error</p>
-                  <p className='text-xs text-red-700 dark:text-red-300 font-poppins'>{paymentsError.message}</p>
+                  <p className='font-poppins text-sm font-semibold text-rose-200'>Scan Error</p>
+                  <p className='mt-1 font-poppins text-xs text-neutral-400'>{paymentsError.message}</p>
                 </div>
               </div>
+              <div className='h-px bg-gradient-to-r from-transparent via-rose-500/30 to-transparent' />
             </div>
           )}
 
@@ -407,50 +469,99 @@ export default function ReceivePage() {
           {/* Payments List */}
           {!paymentsLoading && !keysLocked && transactions.length > 0 && (
             <div className='space-y-3'>
-              {transactions.map((payment) => (
-                <div
-                  key={payment.id}
-                  className='bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors'>
-                  <div className='flex items-center justify-between'>
-                    <div className='flex items-center gap-3'>
-                      <div className='h-10 w-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center'>
-                        <IconArrowDownLeft className='h-5 w-5 text-green-600 dark:text-green-400' />
+              {transactions.map((payment) => {
+                const isClaimingThis = claimingPaymentId === payment.id;
+                const isClaimInProgress =
+                  isClaimingThis &&
+                  (claimStatus === 'deriving' ||
+                    claimStatus === 'checking' ||
+                    claimStatus === 'signing' ||
+                    claimStatus === 'transferring');
+                const isClaimSuccess = isClaimingThis && claimStatus === 'success';
+                const isClaimError = isClaimingThis && claimStatus === 'error';
+
+                return (
+                  <div
+                    key={payment.id}
+                    className='bg-neutral-100 dark:bg-neutral-800 p-4 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors'>
+                    <div className='flex items-center justify-between'>
+                      <div className='flex items-center gap-3'>
+                        <div className='h-10 w-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center'>
+                          <IconArrowDownLeft className='h-5 w-5 text-green-600 dark:text-green-400' />
+                        </div>
+                        <div>
+                          <p className='text-sm font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>
+                            Received from Someone
+                          </p>
+                          <p className='text-xs text-neutral-600 dark:text-neutral-400 font-poppins'>
+                            {formatDate(payment.timestamp)} • Stealth: {truncateAddress(payment.stealthAddress)}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className='text-sm font-medium text-neutral-800 dark:text-neutral-100 font-poppins'>
-                          Received from Someone
-                        </p>
-                        <p className='text-xs text-neutral-600 dark:text-neutral-400 font-poppins'>
-                          {formatDate(payment.timestamp)} • Stealth: {truncateAddress(payment.stealthAddress)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className='text-right'>
-                      <p className='text-lg font-bold text-green-600 dark:text-green-400 font-grotesk'>
-                        +{formatIDRBalance(payment.amount)}
-                      </p>
-                      <div className='flex items-center gap-2'>
-                        {payment.status === 'claimed' ? (
-                          <span className='text-xs px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400 rounded-full font-poppins'>
-                            Claimed
-                          </span>
-                        ) : (
-                          <span className='text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-poppins'>
-                            Ready to Claim
-                          </span>
+                      <div className='text-right flex items-center gap-3'>
+                        <div>
+                          <p className='text-lg font-bold text-green-600 dark:text-green-400 font-grotesk'>
+                            +{formatIDRBalance(payment.amount)}
+                          </p>
+                          <div className='flex items-center gap-2 justify-end'>
+                            {payment.status === 'claimed' || isClaimSuccess ? (
+                              <span className='text-xs px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400 rounded-full font-poppins'>
+                                Claimed
+                              </span>
+                            ) : (
+                              <span className='text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-poppins'>
+                                Ready
+                              </span>
+                            )}
+                            <a
+                              href={`https://sepolia.basescan.org/tx/${payment.txHash}`}
+                              target='_blank'
+                              rel='noopener noreferrer'
+                              className='text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'>
+                              <IconExternalLink className='h-4 w-4' />
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* Claim Button */}
+                        {payment.status !== 'claimed' && !isClaimSuccess && (
+                          <Button
+                            size='sm'
+                            onClick={() => handleClaimPayment(payment)}
+                            disabled={isClaimInProgress}
+                            className='font-poppins'>
+                            {isClaimInProgress ? (
+                              <>
+                                <IconLoader2 className='h-4 w-4 mr-1 animate-spin' />
+                                {claimStatus === 'deriving' && 'Deriving...'}
+                                {claimStatus === 'checking' && 'Checking...'}
+                                {claimStatus === 'transferring' && 'Transferring...'}
+                              </>
+                            ) : (
+                              <>
+                                <IconWallet className='h-4 w-4 mr-1' />
+                                Claim
+                              </>
+                            )}
+                          </Button>
                         )}
-                        <a
-                          href={`https://sepolia.basescan.org/tx/${payment.txHash}`}
-                          target='_blank'
-                          rel='noopener noreferrer'
-                          className='text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'>
-                          <IconExternalLink className='h-4 w-4' />
-                        </a>
                       </div>
                     </div>
+
+                    {/* Claim Error */}
+                    {isClaimError && claimError && <TransactionStatusInline variant='error' message={claimError} />}
+
+                    {/* Claim Success */}
+                    {isClaimSuccess && claimResult && (
+                      <TransactionStatusInline
+                        variant='success'
+                        message={`Claimed ${claimResult.amount} IDRX to ${truncateAddress(claimResult.toAddress)}`}
+                        txHash={claimResult.txHash}
+                      />
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

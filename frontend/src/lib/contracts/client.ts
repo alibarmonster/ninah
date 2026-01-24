@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, custom, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
 
-// Use official Base Sepolia RPC
+// Use official Base Sepolia RPC (supports large block ranges)
 const BASE_SEPOLIA_RPC = 'https://sepolia.base.org';
 
 // Public client for read operations

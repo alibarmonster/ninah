@@ -11,6 +11,10 @@ export type { StealthTransaction } from './useStealthPayments';
 export { useMetaKeys } from './useMetaKeys';
 export { useUsername } from './useUsername';
 
+// Stealth claiming - stealth address as EOA
+export { useStealthClaim } from './useStealthClaim';
+export type { ClaimStatus, ClaimResult, StealthPaymentToClaim } from './useStealthClaim';
+
 // Other hooks
 export { useUserByUsername } from './useUserByUsername';
 export { useRegisterMetaKeys } from './useRegisterMetaKeys';

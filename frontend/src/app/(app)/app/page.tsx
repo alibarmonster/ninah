@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,37 @@ import {
   IconSend,
   IconChevronLeft,
   IconChevronRight,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useWalletBalance, useStealthPayments } from '@/hooks';
+
+// localStorage key for stats history - wallet specific
+const getStatsHistoryKey = (walletAddress: string) => `ninah_stats_history_${walletAddress.toLowerCase()}`;
+
+interface StatsSnapshot {
+  balance: string;
+  totalReceived: string;
+  totalSent: string;
+  totalTransactions: number;
+  timestamp: number;
+}
+
+// Calculate percentage change between two values
+function calculatePercentageChange(current: string, previous: string): { change: string; type: 'positive' | 'negative' | 'neutral' } {
+  const currentNum = parseFloat(current) || 0;
+  const previousNum = parseFloat(previous) || 0;
+
+  if (previousNum === 0) {
+    if (currentNum > 0) return { change: 'New', type: 'positive' };
+    return { change: '-', type: 'neutral' };
+  }
+
+  const percentChange = ((currentNum - previousNum) / previousNum) * 100;
+
+  if (percentChange === 0) return { change: '0%', type: 'neutral' };
+  if (percentChange > 0) return { change: `+${percentChange.toFixed(1)}%`, type: 'positive' };
+  return { change: `${percentChange.toFixed(1)}%`, type: 'negative' };
+}
 
 export default function DashboardPage() {
   const { client: smartWalletClient } = useSmartWallets();
@@ -24,6 +53,63 @@ export default function DashboardPage() {
   // Fetch wallet balance and stealth payments
   const { balance, loading: balanceLoading, error: balanceError } = useWalletBalance(walletAddress);
   const { transactions, loading: paymentsLoading, error: paymentsError, stats } = useStealthPayments(walletAddress);
+
+  // State for previous stats (for percentage calculation)
+  const [previousStats, setPreviousStats] = useState<StatsSnapshot | null>(null);
+
+  // Load previous stats from localStorage on mount (wallet-specific)
+  useEffect(() => {
+    if (!walletAddress) {
+      setPreviousStats(null);
+      return;
+    }
+
+    try {
+      // Clean up legacy global key
+      if (localStorage.getItem('ninah_stats_history')) {
+        localStorage.removeItem('ninah_stats_history');
+      }
+
+      const stored = localStorage.getItem(getStatsHistoryKey(walletAddress));
+      if (stored) {
+        setPreviousStats(JSON.parse(stored));
+      } else {
+        setPreviousStats(null);
+      }
+    } catch (e) {
+      console.warn('Failed to load stats history:', e);
+      setPreviousStats(null);
+    }
+  }, [walletAddress]);
+
+  // Save current stats to localStorage when data loads (once per session)
+  const saveStatsSnapshot = useCallback(() => {
+    if (!walletAddress || balanceLoading || paymentsLoading || !balance) return;
+
+    const currentSnapshot: StatsSnapshot = {
+      balance: balance || '0',
+      totalReceived: stats.totalReceived,
+      totalSent: stats.totalSent,
+      totalTransactions: stats.totalTransactions,
+      timestamp: Date.now(),
+    };
+
+    // Only save if we have previous stats or this is first time
+    // Save snapshot for next session comparison (24 hour minimum gap)
+    const shouldSave = !previousStats || (Date.now() - previousStats.timestamp > 24 * 60 * 60 * 1000);
+
+    if (shouldSave) {
+      try {
+        localStorage.setItem(getStatsHistoryKey(walletAddress), JSON.stringify(currentSnapshot));
+      } catch (e) {
+        console.warn('Failed to save stats history:', e);
+      }
+    }
+  }, [walletAddress, balance, balanceLoading, paymentsLoading, stats, previousStats]);
+
+  useEffect(() => {
+    saveStatsSnapshot();
+  }, [saveStatsSnapshot]);
 
   // Format balance for display
   const formatIDRBalance = (balance: string | null) => {
@@ -48,38 +134,43 @@ export default function DashboardPage() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  // Calculate percentage changes (mock for now)
+  // Calculate actual percentage changes from previous stats
+  const balanceChange = calculatePercentageChange(balance || '0', previousStats?.balance || '0');
+  const receivedChange = calculatePercentageChange(stats.totalReceived, previousStats?.totalReceived || '0');
+  const sentChange = calculatePercentageChange(stats.totalSent, previousStats?.totalSent || '0');
+  const txCountChange = stats.totalTransactions - (previousStats?.totalTransactions || 0);
+
   const statsData = [
     {
       title: 'Total Balance',
       value: formatIDRBalance(balance),
       icon: IconWallet,
-      change: '+12.5%',
-      changeType: 'positive' as const,
+      change: balanceChange.change,
+      changeType: balanceChange.type,
       loading: balanceLoading,
     },
     {
       title: 'Total Received',
       value: formatIDRBalance(stats.totalReceived),
       icon: IconDownload,
-      change: '+15.3%',
-      changeType: 'positive' as const,
+      change: receivedChange.change,
+      changeType: receivedChange.type,
       loading: paymentsLoading,
     },
     {
       title: 'Total Sent',
       value: formatIDRBalance(stats.totalSent),
       icon: IconSend,
-      change: stats.totalSent !== '0' ? 'Sent' : '-',
-      changeType: 'neutral' as const,
+      change: sentChange.change,
+      changeType: sentChange.type,
       loading: paymentsLoading,
     },
     {
       title: 'Total Payments',
       value: stats.totalTransactions.toString(),
       icon: IconTrendingUp,
-      change: `+${stats.totalTransactions}`,
-      changeType: 'positive' as const,
+      change: txCountChange > 0 ? `+${txCountChange} new` : txCountChange === 0 ? '-' : `${txCountChange}`,
+      changeType: txCountChange > 0 ? 'positive' : txCountChange === 0 ? 'neutral' : 'negative',
       loading: paymentsLoading,
     },
   ];
@@ -111,15 +202,29 @@ export default function DashboardPage() {
 
         {/* Error States */}
         {balanceError && (
-          <div className='mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
-            <p className='text-red-600 dark:text-red-400 font-poppins'>Error loading balance: {balanceError.message}</p>
+          <div className='mb-6 overflow-hidden rounded-lg border border-amber-500/20 bg-gradient-to-r from-amber-950/60 to-neutral-900/80 backdrop-blur-sm'>
+            <div className='flex items-center gap-3 p-4'>
+              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20'>
+                <IconAlertTriangle className='h-4 w-4 text-amber-400' />
+              </div>
+              <div>
+                <p className='font-poppins text-sm font-medium text-amber-200'>Balance Unavailable</p>
+                <p className='font-poppins text-xs text-neutral-400'>{balanceError.message}</p>
+              </div>
+            </div>
           </div>
         )}
         {paymentsError && (
-          <div className='mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg'>
-            <p className='text-red-600 dark:text-red-400 font-poppins'>
-              Error loading transactions: {paymentsError.message}
-            </p>
+          <div className='mb-6 overflow-hidden rounded-lg border border-amber-500/20 bg-gradient-to-r from-amber-950/60 to-neutral-900/80 backdrop-blur-sm'>
+            <div className='flex items-center gap-3 p-4'>
+              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20'>
+                <IconAlertTriangle className='h-4 w-4 text-amber-400' />
+              </div>
+              <div>
+                <p className='font-poppins text-sm font-medium text-amber-200'>Transaction History Unavailable</p>
+                <p className='font-poppins text-xs text-neutral-400'>{paymentsError.message}</p>
+              </div>
+            </div>
           </div>
         )}
 
