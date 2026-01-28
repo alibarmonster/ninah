@@ -12,7 +12,7 @@
 
 | Resource | Link |
 |----------|------|
-| **Application** | [https://ninah.vercel.app](https://ninah.vercel.app) |
+| **Application** | [https://ninah-testing.vercel.app](https://ninah-testing.vercel.app/)  | 
 | **Network** | Base Sepolia Testnet |
 | **Block Explorer** | [BaseScan Sepolia](https://sepolia.basescan.org) |
 
